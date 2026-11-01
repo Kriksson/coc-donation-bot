@@ -91,6 +91,9 @@ class WallUpgrade:
         second=wall_panel(second_frame,r.stop)
         if (first is None or first!=second or not first['upgrade'] or
                 (first['cost'],first['currency'])!=(row['cost'],row['currency'])):
+            from coc_bot.runtime.verification import save_frame
+            save_frame(r.config,'wall-first',first_frame)
+            save_frame(r.config,'wall-second',second_frame)
             return {'status':'blocked','message':'Wall level, price or upgrade control is uncertain'}
         if before is None or wall_balance(second_frame,r.reader,row['currency'],r.stop)!=before:
             return {'status':'blocked','message':'Wall resources changed or could not be read before payment'}

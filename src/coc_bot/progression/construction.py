@@ -101,7 +101,10 @@ class Construction:
         for x,y in [(None,None),(.5,.55),(.43,.48),(.56,.48),(.36,.55),(.63,.55),(.5,.67),(.43,.63),(.57,.63)]:
             if r.stopped(): return None
             observed = self.controls(frame)
-            if observed is None: raise ValueError('Building placement preview disappeared')
+            if observed is None:
+                from coc_bot.runtime.verification import save_frame
+                save_frame(r.config,'construction-preview',frame)
+                raise ValueError('Building placement preview disappeared')
             if observed['confirm']:
                 second = self.controls(r.capture.screenshot())
                 if second == observed:

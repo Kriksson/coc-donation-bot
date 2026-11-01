@@ -128,11 +128,14 @@ def confirmation_price(cell, stop=None):
         # Only an observed narrow horizontal strike enables the separate line.
         if strike.sum()>max(3,round(h*.08)):return None
         prices=[]
-        for saturation in (180,200):
+        for saturation in (180,200,210):
             mask=cv2.inRange(hsv,(35,saturation,100),(90,255,255))
             line=mask[round(h*.32):round(h*.64),round(w*.03):round(w*.80)]
-            prices.append(resource_amount(cv2.cvtColor(line,cv2.COLOR_GRAY2BGR),stop))
-        return prices[0] if prices[0] is not None and prices[0]==prices[1] else None
+            value=resource_amount(cv2.cvtColor(line,cv2.COLOR_GRAY2BGR),stop)
+            if value is not None:prices.append(value)
+        # Pale green button shading can contaminate the least saturated mask.
+        # Two strict price reads must still agree; any valid conflict blocks.
+        return prices[0] if len(prices)>=2 and len(set(prices))==1 else None
     return resource_amount(cell[round(h*.48):round(h*.91),round(w*.03):round(w*.80)],stop)
 
 

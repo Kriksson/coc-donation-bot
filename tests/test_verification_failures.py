@@ -4,7 +4,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock,patch
 
 from coc_bot.accounts.store import read,write
-from coc_bot.runtime.verification import fingerprint,record_failure,log_result,resolve_receipt
+from coc_bot.runtime.verification import fingerprint,record_failure,log_result,resolve_receipt,save_frame
 from coc_bot.builder_base.verification import deferred
 from coc_bot.builder_base.runner import BuilderBaseRunner,pending
 
@@ -40,6 +40,17 @@ class VerificationTests(unittest.TestCase):
     def test_logging_io_failure_does_not_turn_a_failed_check_into_a_crash(self):
         with patch('coc_bot.runtime.verification.write_json',side_effect=OSError('disk full')):
             self.assertTrue(record_failure(self.config,'builder_base','Unreadable quantity'))
+
+    def test_failure_frames_replace_the_previous_observation_without_growth(self):
+        import cv2
+        import numpy as np
+        for value in (20,70,110):
+            path=save_frame(self.config,'wall-first',np.full((20,30,3),value,np.uint8))
+        self.assertEqual(len(list((self.config.data_dir/'verification').glob('*.png'))),1)
+        self.assertTrue((cv2.imread(str(path))==110).all())
+        with patch('cv2.imwrite',side_effect=OSError('disk full')):
+            self.assertIsNone(save_frame(self.config,'wall-first',np.zeros((20,30,3),np.uint8)))
+        self.assertIsNone(save_frame(self.config,'wall-first',object()))
 
     def marker(self):
         return {'account':'#TEST','fingerprint':fingerprint(self.receipt),'home_verified_at':123}

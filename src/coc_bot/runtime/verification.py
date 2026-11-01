@@ -10,6 +10,20 @@ from coc_bot.upgrades.runner import write_json
 LIMIT = 100
 
 
+def save_frame(config, name, frame):
+    """Overwrite one diagnostic frame before navigation hides a failed check."""
+    import cv2
+    import numpy as np
+    if not isinstance(frame,np.ndarray):return None
+    path=config.data_dir/'verification'/(name+'.png')
+    try:
+        path.parent.mkdir(parents=True,exist_ok=True)
+        return path if cv2.imwrite(str(path),frame) else None
+    except (OSError,cv2.error) as exc:
+        logger.debug('Verification frame could not be saved: {}',exc)
+        return None
+
+
 def timestamp(value,default):
     return value if type(value) in (int,float) and math.isfinite(value) and value>=0 else default
 

@@ -108,7 +108,33 @@ def balance_amount(image, stop=None):
         mask=cv2.inRange(hsv,(0,0,threshold),(180,75,255))
         value=read_digits(cv2.cvtColor(mask,cv2.COLOR_GRAY2BGR),extra_templates=red_digit_variants())
         if value and re.fullmatch(r'\d{1,9}',value):readings.append(int(value))
-    return readings[0] if len(readings)==2 and readings[0]==readings[1] else None
+    if len(set(readings))>1:return None
+    if len(readings)==2:return readings[0]
+    # A separate pale patch of scenery can survive the bright mask to the left
+    # of the counter. Keep the entire aligned number, including leading digits;
+    # never replace this with a fixed, narrower text crop.
+    anchor=max(boxes,key=lambda b:b[0]+b[2])
+    height=anchor[3];baseline=anchor[1]+height
+    group=[b for b in boxes if abs(b[3]-height)<=height*.15
+           and abs(b[1]+b[3]-baseline)<=height*.15]
+    if len(group)<2 or len(group)==len(boxes):return None
+    group.sort(key=lambda b:b[0])
+    x=min(b[0] for b in group);y=min(b[1] for b in group)
+    right=max(a+c for a,b,c,d in group);bottom=max(b+d for a,b,c,d in group)
+    if x<=1 or right>=image.shape[1]-1:return None
+    if any(b[0]-a[0]-a[2]>height for a,b in zip(group,group[1:])):return None
+    # Nearby or overlapping unmatched shapes might be a clipped leading digit.
+    # Only an isolated patch well outside the number may be excluded.
+    if any(b not in group and not (b[0]+b[2]<x-height*1.5 or b[0]>right+height*1.5)
+           for b in boxes):return None
+    bounded=image[y:bottom,x:right]
+    first=read_digits(bounded,extra_templates=red_digit_variants())
+    clean=cv2.inRange(cv2.cvtColor(bounded,cv2.COLOR_BGR2HSV),(0,0,235),(180,75,255))
+    second=read_digits(cv2.cvtColor(clean,cv2.COLOR_GRAY2BGR),extra_templates=red_digit_variants())
+    if (first and first==second and re.fullmatch(r'\d{2,9}',first)
+        and len(first)==len(group) and int(first)<=500_000_000
+        and all(v==int(first) for v in readings)):return int(first)
+    return None
 
 
 class ProgressionReader(UpgradeReader):

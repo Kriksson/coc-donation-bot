@@ -81,6 +81,23 @@ class UpgradeImageTests(unittest.TestCase):
         altered=frame.copy();altered[944:955,1160:1445]=0
         self.assertIsNone(reader.confirmation(altered,Candidate('Archer',1_500_000,'elixir',(1,1))))
 
+    def test_discounted_army_camp_ignores_pale_button_shading(self):
+        frame=cv2.imread(str(self.fixtures/'discounted-army-camp-confirmation.png'))
+        reader=UpgradeReader()
+        self.assertIsNotNone(reader.confirmation(frame,Candidate('Army Camp',125_000,'elixir',(1,1))))
+        for name,price,resource in [('Army Camp',250_000,'elixir'),('Army Camp',12_500,'elixir'),
+                                    ('Army Camp',125_000,'gold'),('Army Camp',125_000,'gems'),
+                                    ('Barracks',125_000,'elixir')]:
+            self.assertIsNone(reader.confirmation(frame,Candidate(name,price,resource,(1,1))))
+
+    def test_discount_still_requires_two_nonconflicting_strict_price_reads(self):
+        from coc_bot.upgrades.vision import confirmation_price
+        frame=cv2.imread(str(self.fixtures/'discounted-army-camp-confirmation.png'))
+        cell=frame[838:978,1155:1451]
+        for readings in ([None,125_000,None],[250_000,125_000,125_000],[None,None,None]):
+            with patch('coc_bot.upgrades.vision.resource_amount',side_effect=readings):
+                self.assertIsNone(confirmation_price(cell))
+
     def pet_frame(self):
         frame=np.zeros((1048,1853,3),np.uint8)
         frame[:,1350:]=cv2.imread(str(self.fixtures/'pet-menu-panel.png'))
