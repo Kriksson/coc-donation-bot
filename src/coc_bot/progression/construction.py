@@ -142,7 +142,11 @@ class Construction:
             return SpaceMaker(r).run()
         # Re-read the unchanged resource counters before the one spending tap.
         screen = r.capture.screenshot()
-        normal = {'gold':(.87,.035,.953,.072), 'elixir':(.87,.103,.953,.14)}
+        # The complete HUD counter can extend beyond the old text-only crop.
+        # Use the same bounded bar interiors as ordinary Home resource checks;
+        # clipped digits must not reject an otherwise verified legal preview.
+        from coc_bot.progression.resources import HUD
+        normal = {name:HUD[name] for name in ('gold','elixir')}
         balance = balance_amount(crop(screen,normal[row['currency']]),r.stop)
         if balance != balances[row['currency']] or controls(screen) != placement:
             if not r.stopped():r.input.tap(*placement['cancel'],jitter=0)
