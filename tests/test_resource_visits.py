@@ -134,6 +134,43 @@ class GoalFleetTests(ClanRoutingTests):
         self.assertTrue(fleet._checkpoint(self.source,0))
         self.assertEqual(fleet._next,self.same['id'])
 
+    def test_primary_refill_cannot_starve_due_accounts_after_its_full_watch_window(self):
+        fleet=self.fleet(self.same);visit=fleet.current._visit
+        self.assertTrue(fleet._checkpoint(self.same,0))
+        self.assertEqual(fleet._next,self.source['id'])
+        self.assertTrue(fleet._visit_suspended)
+        self.assertFalse(visit.complete());self.assertEqual(visit.order(),('farm',))
+        fleet.rotation.complete(self.same['id'],1001,1001,suspended=True)
+        self.assertNotIn('last_finished_at',fleet.rotation.load()['visits'][self.same['id']])
+        self.assertEqual(fleet.rotation.load()['next_watch_seconds'],900)
+        fleet._initialize_schedule(self.same)
+        self.assertEqual(visit.order(),('farm',))
+
+    def test_primary_keeps_its_watch_window_and_waits_when_nobody_is_due(self):
+        fleet=self.fleet(self.same)
+        self.assertFalse(fleet._checkpoint(self.same,200))  # Only 801 of 900 seconds.
+        state=fleet.rotation.load();state['visits'][self.source['id']]={'next_visit_at':2000}
+        write(fleet.rotation.path,state)
+        self.assertFalse(fleet._checkpoint(self.same,0))
+        self.assertFalse(getattr(fleet,'_visit_suspended',False))
+
+    def test_primary_handoff_waits_for_requests_and_unresolved_actions(self):
+        fleet=self.fleet(self.same)
+        fleet.current._has_donate_request.return_value=True
+        self.assertFalse(fleet._checkpoint(self.same,0))
+        fleet.current._has_donate_request.return_value=False
+        with patch('coc_bot.attack.recovery.pending',return_value=True):
+            self.assertFalse(fleet._checkpoint(self.same,0))
+        for relative,value in (('upgrades/state.json',{'pending':{'phase':'confirming'}}),
+                               ('layouts/state.json',{'pending':{'phase':'placing'}}),
+                               ('layouts/state.json',{'last_survey':{'payment':{'phase':'confirming'}}})):
+            with self.subTest(relative=relative,value=value):
+                path=fleet.current.config.data_dir/relative
+                write(path,value)
+                try:self.assertFalse(fleet._checkpoint(self.same,0))
+                finally:path.unlink()
+        self.assertFalse(getattr(fleet,'_visit_suspended',False))
+
     def test_between_step_request_saves_interrupted_account_as_resume(self):
         fleet=self.fleet(self.source);fleet._chat_due=True
         fleet.current.chat_monitor.find_donate_request.return_value=SimpleNamespace(signature='new-request')

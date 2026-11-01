@@ -196,12 +196,17 @@ class AccountFleet:
             write(self.rotation.path,state)
         if account['id']==state['primary_id']:
             visit=getattr(self.current,'_visit',None)
-            if visit and not visit.complete():return False
             if now-started<state.get('next_watch_seconds',state['watch_seconds']):return False
             target=self.rotation.next_account(now)
             if target is None:return False
             # A fresh visible request earns a further chat pass before leaving.
             if self.current._has_donate_request(self.current.capture.screenshot()):return False
+            if visit and not visit.complete():
+                # A large refill can span many battles. At this receipt-free
+                # checkpoint, preserve its cursor and give due accounts a turn
+                # after the full donor window rather than starving their work.
+                self._visit_suspended=True
+                logger.info('Donor window complete — pausing unfinished checklist for a due account; work will resume on return')
             self._next=target['id']
             return True
         visit=getattr(self.current,'_visit',None)
