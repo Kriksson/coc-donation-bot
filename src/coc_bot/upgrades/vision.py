@@ -47,6 +47,10 @@ def upgrade_heading(value, candidate):
         # The inspected outlined heading can duplicate one R. Correct only the
         # full known building word; never alter levels, prices or other names.
         value=re.sub(r'(?i)\bbar{3}acks\b','Barracks',value)
+    if compact(candidate.name)=='clancastle':
+        # The inspected outlined title joins the t/l as "til" in OCR.
+        # Correct only this complete known building name, never any price.
+        value=re.sub(r'(?i)\bclan\s+castile\b','Clan Castle',value)
     return re.sub(r'^up+(?=grad)','up',compact(value))
 
 

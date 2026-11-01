@@ -98,6 +98,14 @@ class UpgradeImageTests(unittest.TestCase):
             with patch('coc_bot.upgrades.vision.resource_amount',side_effect=readings):
                 self.assertIsNone(confirmation_price(cell))
 
+    def test_clan_castle_heading_corrects_only_the_inspected_whole_name(self):
+        frame=cv2.imread(str(self.fixtures/'discounted-clan-castle-confirmation.png'))
+        reader=UpgradeReader()
+        self.assertIsNotNone(reader.confirmation(frame,Candidate('Clan Castle',600_000,'elixir',(1,1))))
+        for name,price,resource in [('Clan Castle',1_200_000,'elixir'),('Clan Castle',600_000,'gold'),
+                                    ('Clan Castle',600_000,'gems'),('Army Camp',600_000,'elixir')]:
+            self.assertIsNone(reader.confirmation(frame,Candidate(name,price,resource,(1,1))))
+
     def pet_frame(self):
         frame=np.zeros((1048,1853,3),np.uint8)
         frame[:,1350:]=cv2.imread(str(self.fixtures/'pet-menu-panel.png'))
