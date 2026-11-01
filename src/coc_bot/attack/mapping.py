@@ -14,7 +14,7 @@ from coc_bot.attack.army import check_stop
 from coc_bot.attack.camera import compare_camera
 
 
-def boundary_mask(frame):
+def boundary_mask(frame, *, allow_fading=False):
     h,w = frame.shape[:2]
     hsv = cv2.cvtColor(frame,cv2.COLOR_BGR2HSV)
     # The thin red outline is blended with the ground: green scenery can shift
@@ -23,7 +23,13 @@ def boundary_mask(frame):
     b,g,r=cv2.split(frame.astype(np.float32))
     # Gold wall trim is also thin, diagonal, and orange in HSV. Require red
     # dominance, not just hue, before considering any of those pixels.
-    red &= (r>g*1.7)&(r>b*1.7)
+    # On the default grass, the fading outer line can have R/G around 1.65.
+    # Cutting it at 1.7 breaks that line and leaves red interior wall shadows
+    # as a convincing smaller perimeter. Orange/gold trim remains below 1.6;
+    # thin-shape, support, temporal and four-side coverage checks still apply.
+    # Builder Base and compact starter geometry keep their existing mask;
+    # the Home Village observation path explicitly opts into the fading line.
+    red &= (r>g*(1.6 if allow_fading else 1.7))&(r>b*1.7)
     mask = red.astype(np.uint8)*255
     # Exclude all fixed combat controls. This intentionally leaves hidden
     # perimeter unobserved rather than completing a diamond through the HUD.
@@ -59,7 +65,7 @@ def observe_boundary(frame, previous=None, *, battle_confirmed=False, stop_check
     if battle_confirmed is not True:
         result.coverage,result.reason = 'none','Battlefield not positively confirmed'
         return result
-    mask = boundary_mask(frame)
+    mask = boundary_mask(frame,allow_fading=True)
     lines = cv2.HoughLinesP(mask,1,np.pi/360,threshold=max(20,round(w*.018)),
                             minLineLength=round(w*.04),maxLineGap=round(w*.007))
     if lines is None:
@@ -113,7 +119,7 @@ def observe_boundary(frame, previous=None, *, battle_confirmed=False, stop_check
         if motion['verified'] and abs(motion['scale']-1)<.003:
             transform = np.array(motion['transform'])
             stationary = abs(transform[0,2])<2 and abs(transform[1,2])<2
-            old = cv2.dilate(boundary_mask(previous),np.ones((5,5),np.uint8))
+            old = cv2.dilate(boundary_mask(previous,allow_fading=True),np.ones((5,5),np.uint8))
             hits = []
             for segment in result.segments:
                 a,b = np.array(segment['points'])*np.array([w,h])

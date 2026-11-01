@@ -177,6 +177,12 @@ def survey(session, *, zoom=True, full_map=False, compact=False):
         (evidence_dir/f'view-{index}.json').write_text(json.dumps({'transform':transform.tolist(),
                                       'observation':observation.to_dict()}),encoding='utf-8')
         if observation.stable:
+            # A pulsing outline can lose its outermost fragments on one frame.
+            # Retain independently supported fragments from BOTH stationary
+            # observations; an interior wall must not shrink the measured ring.
+            earlier=observe_boundary(previous,current,battle_confirmed=True,stop_check=stop)
+            if earlier.stable:
+                segments.extend(registered_segments(earlier,np.linalg.inv(transform)@motion,w,h))
             segments.extend(registered_segments(observation,np.linalg.inv(transform),w,h))
         views.append({'frame':current,'transform':transform.tolist(),'segments':len(observation.segments)})
         evidence={}
