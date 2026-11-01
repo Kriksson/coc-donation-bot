@@ -1,4 +1,5 @@
 import tempfile
+import shutil
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -232,6 +233,16 @@ class WallReceiptTests(unittest.TestCase):
 
 
 class BulkWallTests(unittest.TestCase):
+    @unittest.skipUnless(shutil.which('tesseract'),'Native wall heading OCR is required')
+    def test_starter_bulk_price_is_not_contaminated_by_the_tiles_bright_border(self):
+        import cv2
+        from coc_bot.progression.bulk_walls import selection
+        frame=cv2.imread(str(Path(__file__).parent/'fixtures/resource_visits/wall-starter-three.png'))
+        value=selection(frame,'gold')
+        self.assertEqual((value['level'],value['count'],value['price'],value['currency']),(1,3,3000,'gold'))
+        self.assertFalse(value['red'])
+        frame[738:790,1028:1065]=0
+        self.assertIsNone(selection(frame,'gold'))
     def test_budget_respects_reserves_and_available_count(self):
         from coc_bot.progression.bulk_walls import maximum_affordable
         self.assertEqual(maximum_affordable(2140,0,1000,22),2)

@@ -11,6 +11,17 @@ from coc_bot.progression.resources import HUD
 from coc_bot.upgrades.vision import crop
 
 class ConstructionCounterTests(TestCase):
+ def test_native_cancel_joined_to_red_roof_retains_legal_paired_controls(self):
+  f=cv2.imread(str(Path(__file__).parent/'fixtures/progression/home-preview-red-roof.png'))
+  found=controls(f)
+  self.assertIsNotNone(found)
+  self.assertLess(abs(found['cancel'][0]-931),3)
+  self.assertLess(abs(found['cancel'][1]-500),3)
+  self.assertEqual(found['confirm'],(996,500))
+  missing=f.copy();missing[470:530,900:960]=0
+  self.assertIsNone(controls(missing))
+  disabled=f.copy();disabled[470:530,975:1020]=0
+  self.assertIsNone(controls(disabled)['confirm'])
  def frame(self):return cv2.imread(str(Path(__file__).parent/'fixtures/progression/workshop-legal-placement.png'))
  def runner(self,root,balance=4864686):
   frame=self.frame();row={'name':'Workshop','new':True,'cost':1200000,'currency':'elixir','point':(1594,599)}

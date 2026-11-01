@@ -19,7 +19,7 @@ def _locate(frame, name, *, check_threshold=205, reference_name=None):
     region = crop(canvas,(.16,.02,.85,.80))
     asset = _asset(reference_name or name)
     if asset is None: return None
-    if name=='no' and reference_name=='no_builder':
+    if name=='no' and reference_name in ('no_builder','no_home'):
         # A red Barracks roof can join the cancel button's red component.
         # The inspected full button still has its exact white X and border.
         base=_asset('no')
@@ -79,6 +79,10 @@ def _locate(frame, name, *, check_threshold=205, reference_name=None):
 
 def controls(frame, *, check_threshold=205, check_asset=None, cancel_asset=None):
     no,yes = _locate(frame,'no',reference_name=cancel_asset),_locate(frame,'yes',check_threshold=check_threshold,reference_name=check_asset)
+    if not no and cancel_asset is None:
+        # This inspected Home preview joins the red X border to a red roof.
+        # Require the full native button at .97, then the usual paired geometry.
+        no=_locate(frame,'no',reference_name='no_home')
     if not no:return None
     a,b=no['point']
     if yes and (abs(b-yes['point'][1])>no['width']*.20 or

@@ -187,7 +187,8 @@ class BuilderProgressionRunner(BuilderUpgradeRunner):
         import cv2
         icon=crop(frame,(.684,.16,.719,.222))
         if cv2.inRange(cv2.cvtColor(icon,cv2.COLOR_BGR2HSV),(35,90,180),(90,255,255)).mean()/255<.23:return None
-        return resource_amount(crop(frame,(.61,.174,.679,.208)),self.stop)
+        from coc_bot.progression.reader import balance_amount
+        return balance_amount(crop(frame,(.61,.174,.679,.208)),self.stop)
 
     def payment_receipt(self,kind,candidate,confirmation,report,frame):
         if kind!='research' or type(confirmation.get('target_level')) is not int:return {}

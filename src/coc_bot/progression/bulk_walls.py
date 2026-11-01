@@ -82,6 +82,10 @@ def payment(frame, button, stop=None):
     if resource not in ('gold','elixir'):return None
     from coc_bot.progression.reader import balance_amount
     price=balance_amount(price_image,stop)
+    if price is None:
+        # Exclude a bright starter-tile border only for this white-counter
+        # retry. Keep the complete original crop for red/large prices below.
+        price=balance_amount(price_image[:,round(5*scale):],stop)
     hsv=cv2.cvtColor(price_image,cv2.COLOR_BGR2HSV)
     red=(cv2.inRange(hsv,(0,100,140),(12,255,255)) | cv2.inRange(hsv,(170,100,140),(180,255,255)))
     red_value=None

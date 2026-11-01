@@ -267,6 +267,15 @@ class BuilderProgressionTests(unittest.TestCase):
         return self.pending_research()|{'cost':100000,'target_level':5,
             'balances_before':{'gold':425018,'elixir':1871169},'gems_before':765}
 
+    @unittest.skipUnless(shutil.which('tesseract'),'Native menu identity OCR is required')
+    def test_native_research_gems_remain_readable_over_scenery_with_a_verified_icon(self):
+        frame=self.fixture('research-gems-scenery.png')
+        self.assertEqual(self.r.menu_gems(frame),765)
+        missing_icon=frame.copy()
+        missing_icon[round(frame.shape[0]*.16):round(frame.shape[0]*.222),
+                     round(frame.shape[1]*.684):round(frame.shape[1]*.719)]=0
+        self.assertIsNone(self.r.menu_gems(missing_icon))
+
     def research_reader(self):
         r=self.r;r.reader=Mock();r.reader.menu_kind.return_value='research'
         r.reader.active_names.return_value=['sneakyarcher'];r.reader.availability.return_value=(0,1)
