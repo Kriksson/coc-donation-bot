@@ -23,15 +23,16 @@ def recover_home_bonus(nav,frame):
 
 
 def recover_home_announcement(nav,frame):
-    from coc_bot.vision.notices import hammer_jam_close_button
-    point=hammer_jam_close_button(frame)
+    from coc_bot.vision.notices import hammer_jam_close_button,gold_pass_offer_close_button
+    def close(image):return hammer_jam_close_button(image) or gold_pass_offer_close_button(image)
+    point=close(frame)
     if point is None:
         nav.__dict__.pop('_hammer_jam_taps',None)
         return False
     if nav._stopping() or nav.__dict__.get('_hammer_jam_taps',0)>=2:return False
-    if hammer_jam_close_button(nav.capture.screenshot())!=point or nav._stopping():return False
+    if close(nav.capture.screenshot())!=point or nav._stopping():return False
     nav._hammer_jam_taps=nav.__dict__.get('_hammer_jam_taps',0)+1
-    logger.info('Hammer Jam announcement — closing before village verification')
+    logger.info('Verified announcement — closing before village verification')
     nav.input.tap(*point,jitter=0)
     return True
 
@@ -49,9 +50,10 @@ def recover_free_chest(nav,frame):
 
 def recover_reward_summary(nav,frame):
     from coc_bot.vision.battle_menu import reward_continue_button
-    from coc_bot.vision.notices import free_reward_skip_button,free_reward_skip_confirm_button
+    from coc_bot.vision.notices import free_reward_skip_button,free_reward_skip_confirm_button,free_chest_skip_button
     def button(image):
         return (free_reward_skip_confirm_button(image) or free_reward_skip_button(image)
+                or free_chest_skip_button(image,nav._stopping)
                 or reward_continue_button(image,stop_check=nav._stopping))
     point=button(frame)
     if point is None or nav._stopping() or nav.__dict__.get('_resource_reward_taps',0)>=60:return False
@@ -68,8 +70,8 @@ def recover_home_overlay(nav, frame):
     from coc_bot.vision.connection_dialog import recover_connection_error
     if recover_connection_error(nav,frame):return True
     if recover_home_announcement(nav,frame):return True
-    if recover_free_chest(nav,frame):return True
     if recover_reward_summary(nav,frame):return True
+    if recover_free_chest(nav,frame):return True
     if recover_home_bonus(nav,frame):return True
     # This same mandatory free calendar can appear while loading a saved
     # account. Dismiss it before identity verification, without treating the

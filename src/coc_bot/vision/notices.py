@@ -96,6 +96,19 @@ def free_chest_tap_point(frame,stop=None):
     return round(frame.shape[1]*.50),round(frame.shape[0]*.54)
 
 
+def free_chest_skip_button(frame,stop=None):
+    """Skip free chest animations; the next modal must prove rewards are kept."""
+    if free_chest_tap_point(frame,stop) is None:return None
+    image=cv2.resize(frame,(1853,1048));ref=_reference('free_reward_skip')
+    if ref is None:return None
+    region=image[890:1010,1590:1853]
+    _,score,_,(x,y)=cv2.minMaxLoc(cv2.matchTemplate(region,ref,cv2.TM_CCOEFF_NORMED))
+    observed=region[y:y+ref.shape[0],x:x+ref.shape[1]]
+    if score<.97 or observed.mean()<ref.mean()*.90:return None
+    return (round((1590+x+ref.shape[1]/2)*frame.shape[1]/1853),
+            round((890+y+ref.shape[0]/2)*frame.shape[0]/1048))
+
+
 def stalled_season_bank_visible(frame):
     """The inspected control-free season payout scene, not a purchase/reveal."""
     if not isinstance(frame,np.ndarray) or not 1.6<frame.shape[1]/frame.shape[0]<1.95:return False
@@ -126,6 +139,25 @@ def hammer_jam_close_button(frame):
         observed=region[y:y+ref.shape[0],x:x+ref.shape[1]]
         if score<.97 or observed.mean()<ref.mean()*.90:return None
         if name=='hammer_jam_close':
+            point=(round((x0+x+ref.shape[1]/2)*frame.shape[1]/1853),
+                   round((y0+y+ref.shape[0]/2)*frame.shape[0]/1048))
+    return point
+
+
+def gold_pass_offer_close_button(frame):
+    """Dismiss the native pass advertisement, never its purchase action."""
+    if not isinstance(frame,np.ndarray) or not 1.6<frame.shape[1]/frame.shape[0]<1.95:return None
+    image=cv2.resize(frame,(1853,1048));point=None
+    for name,box in [('gold_pass_offer_heading',(730,610,1150,710)),
+                     ('gold_pass_offer_message',(700,680,1170,755)),
+                     ('gold_pass_offer_close',(1565,65,1680,175))]:
+        ref=_reference(name)
+        if ref is None:return None
+        x0,y0,x1,y1=box;region=image[y0:y1,x0:x1]
+        _,score,_,(x,y)=cv2.minMaxLoc(cv2.matchTemplate(region,ref,cv2.TM_CCOEFF_NORMED))
+        observed=region[y:y+ref.shape[0],x:x+ref.shape[1]]
+        if score<.97 or observed.mean()<ref.mean()*.90:return None
+        if name=='gold_pass_offer_close':
             point=(round((x0+x+ref.shape[1]/2)*frame.shape[1]/1853),
                    round((y0+y+ref.shape[0]/2)*frame.shape[0]/1048))
     return point

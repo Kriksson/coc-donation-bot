@@ -35,6 +35,36 @@ class FreeChestTests(TestCase):
         with patch('coc_bot.upgrades.vision.text',return_value='Buy'):
             self.assertIsNone(free_chest_tap_point(frame))
 
+    def test_free_chest_skip_requires_openable_chest_and_native_bright_skip(self):
+        from coc_bot.vision.notices import free_chest_skip_button
+        frame=cv2.imread(str(ROOT/'free-chest-skip.png'))
+        self.assertIsNotNone(free_chest_skip_button(frame))
+        self.assertIn(free_chest_skip_button(cv2.resize(frame,(1280,724))), (None,(1195,658)))
+        self.assertIsNone(free_chest_skip_button(self.frame()),'Skip is absent before its native delay')
+        for x,y,w,h in ((240,280,110,385),(730,825,370,105),(1590,890,263,120)):
+            bad=frame.copy();bad[y:y+h,x:x+w]=0
+            self.assertIsNone(free_chest_skip_button(bad))
+        for name in ('skip-chest-confirm.png','hammer-jam.png','connection-error.png','free-reward-skin.png'):
+            self.assertIsNone(free_chest_skip_button(cv2.imread(str(ROOT/name))))
+        self.assertIsNone(free_chest_skip_button((frame*.4).astype('uint8')))
+
+    def test_overlay_prefers_verified_skip_to_repeated_chest_strikes(self):
+        from unittest.mock import patch
+        from coc_bot.progression.home import recover_home_overlay
+        frame=cv2.imread(str(ROOT/'free-chest-skip.png'));nav=SimpleNamespace(capture=Mock(),input=Mock(),_stopping=lambda:False)
+        nav.capture.screenshot.return_value=frame
+        with patch('coc_bot.progression.home.recover_free_chest') as strike:
+            self.assertTrue(recover_home_overlay(nav,frame))
+        strike.assert_not_called();nav.input.tap.assert_called_once()
+
+    def test_chest_skip_does_not_use_changed_fresh_frame_or_ignore_stop(self):
+        from coc_bot.progression.home import recover_reward_summary
+        frame=cv2.imread(str(ROOT/'free-chest-skip.png'));nav=SimpleNamespace(capture=Mock(),input=Mock(),_stopping=lambda:False)
+        nav.capture.screenshot.return_value=frame*0
+        self.assertFalse(recover_reward_summary(nav,frame));nav.input.tap.assert_not_called()
+        nav._stopping=lambda:True
+        self.assertFalse(recover_reward_summary(nav,frame));nav.input.tap.assert_not_called()
+
     @skipUnless(shutil.which('tesseract'),'Tesseract is required')
     def test_real_common_rarity_after_first_strike(self):
         self.assertIsNotNone(free_chest_tap_point(cv2.imread(str(ROOT/'free-chest-struck.png'))))
