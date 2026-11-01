@@ -662,9 +662,8 @@ class AttackNavigator:
         """
         After Return Home (or while leaving attack UI): only chase home village.
 
-        Ignores results/battle heuristics — those false-trigger on home grass/UI
-        and used to re-tap Return Home forever. If home is not visible yet, re-tap
-        calibrated return_home coords and keep looking for Attack!/chat only.
+        Recover known interruptions and confirm village/chat anchors. Another
+        Return Home tap requires matching native results labels on two frames.
         """
         auxiliary_recovery = AuxiliaryRecovery(self.classifier, self.input, self._stopping)
         for _ in range(16):
@@ -770,12 +769,19 @@ class AttackNavigator:
                     return False
                 continue
 
-            # Not home yet — re-tap calibrated Return Home coords (no vision).
-            logger.info(
-                "Home not visible yet (screen={}) — re-tapping return_home coords",
-                screen.value,
-            )
-            self._tap_return_home_coords(frame)
+            # A generic results label can also describe a shop's green footer.
+            # Never turn that label into a tap on unverified stored coordinates.
+            target=self.battle_completion.detect(frame)
+            if target is None:
+                logger.warning('Return Home control is unverified (screen={}); no recovery tap sent',screen.value)
+                return False
+            fresh=self.capture.screenshot()
+            second=self.battle_completion.detect(fresh)
+            if (self._stopping() or second is None or fresh.shape!=frame.shape
+                or max(abs(a-b) for a,b in zip(target,second))>max(frame.shape[:2])*.01):
+                return False
+            logger.info('Return Home verified on two results frames at {}',second)
+            self.input.tap(*second,jitter=0)
             if self._sleep(1.4):
                 return False
         outcome = self._confirm_leave_via_clan_chat()

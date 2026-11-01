@@ -69,12 +69,17 @@ class AuxiliaryPageDetector:
         pages = set()
         # Selection enlarges one tab icon; two of three unchanged categories
         # remain independent evidence regardless of which tab is selected.
-        if sum(cls._find(gray, name, bounds) is not None for name, bounds in (
+        icons=(
             ('shop_shield_current', (350, 15, 445, 86)),
             ('shop_medal_current', (430, 15, 528, 86)),
             ('shop_resources_current', (270, 15, 365, 86)),
-        )) >= 2:
-            pages.add('shop')
+        )
+        # The inspected five-tab early-Hall shop centers its whole category
+        # group 80px farther right. Require two icons at the SAME translation.
+        for offset in (0,80):
+            if sum(cls._find(gray,name,(a+offset,b,c+offset,d)) is not None
+                   for name,(a,b,c,d) in icons)>=2:
+                pages.add('shop');break
         if all(cls._find(gray, name, bounds) is not None for name, bounds in (
             ('settings_title', (705, 25, 805, 65)),
             ('settings_music', (300, 150, 385, 198)),

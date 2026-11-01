@@ -55,8 +55,11 @@ class HomeResources(BuilderReader):
         resources = ['gold', 'elixir']
         # A saved verified early Hall and absence of the DE icon establish that
         # the third counter is gems. Later Halls require the actual dark icon.
-        dark = currency(crop(current, (.963, .158, .998, .225))) == 'dark_elixir'
         hall = getattr(config, 'account_town_hall', None)
+        # At verified early Halls this slot contains gems. Dark shadows on the
+        # green gem can satisfy a loose purple-color test; never tap that slot.
+        early_hall=type(hall) is int and hall<7
+        dark = not early_hall and currency(crop(current, (.963, .158, .998, .225))) == 'dark_elixir'
         if dark:resources.append('dark_elixir')
         elif type(hall) is not int or hall >= 7:return {}
         capacities = {}
