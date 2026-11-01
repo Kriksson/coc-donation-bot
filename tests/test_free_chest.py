@@ -123,6 +123,33 @@ class FreeChestTests(TestCase):
             self.assertFalse(nav.recover_stalled_bank(frame,90))
         session.app.force_stop.assert_not_called()
 
+    def test_native_bank_animation_cannot_hide_its_fixed_recovery_scene(self):
+        from coc_bot.vision.notices import stalled_season_bank_visible
+        for name in ('season-bank-stalled.png','season-bank-th10.png'):
+            frame=cv2.imread(str(ROOT/name))
+            self.assertTrue(stalled_season_bank_visible(frame))
+            # Animated pig/coins are not stable recovery evidence.
+            frame[410:690,780:1110]=0
+            self.assertTrue(stalled_season_bank_visible(frame))
+            frame[575:690,200:335]=0
+            self.assertFalse(stalled_season_bank_visible(frame))
+
+    def test_account_menu_handles_known_bank_before_unrelated_info_ocr(self):
+        from unittest.mock import patch
+        from coc_bot.accounts.navigation import AccountNavigator
+        class RecoveryReached(RuntimeError):pass
+        frame=cv2.imread(str(ROOT/'season-bank-th10.png'))
+        session=SimpleNamespace(capture=Mock(),input=Mock(),navigator=Mock())
+        session.capture.screenshot.return_value=frame
+        nav=AccountNavigator(session)
+        nav.recover_stalled_bank=Mock(side_effect=RecoveryReached)
+        with patch('coc_bot.progression.home.recover_home_overlay',return_value=False),\
+             patch('coc_bot.accounts.navigation.time.monotonic',side_effect=[0,31,31]),\
+             patch('coc_bot.progression.troop_info.read_info') as info:
+            with self.assertRaises(RecoveryReached):nav.menu()
+        nav.recover_stalled_bank.assert_called_once_with(frame,31)
+        info.assert_not_called()
+
     def test_fresh_prompt_stop_and_limit_prevent_unverified_extra_taps(self):
         nav=SimpleNamespace(_stopping=Mock(return_value=False),capture=Mock(),input=Mock())
         nav.capture.screenshot.return_value=self.frame()

@@ -275,7 +275,7 @@ class AccountNavigator:
         from coc_bot.vision.battle_menu import direct_match_button
         from coc_bot.upgrades.vision import UpgradeReader
         from coc_bot.progression.troop_info import read_info
-        from coc_bot.vision.notices import reward_reveal_visible
+        from coc_bot.vision.notices import reward_reveal_visible,stalled_season_bank_visible
         sidebar_reader=UpgradeReader(self.stop)
         sidebar_closed=info_closed=picker_closed=False
         started=time.monotonic();unknown=0
@@ -283,6 +283,12 @@ class AccountNavigator:
             if time.monotonic()-started>360:raise ValueError('Account notices did not finish; verification remains pending')
             if recover_home_overlay(nav,frame):unknown=0
             elif reward_reveal_visible(frame):unknown=0  # Native reward animation; no input.
+            elif stalled_season_bank_visible(frame):
+                # The pig/coins animate; fixed hall chrome establishes this
+                # control-free scene. Wait thirty seconds, then recover once,
+                # without spending the unknown-screen budget on unrelated OCR.
+                unknown=0
+                self.recover_stalled_bank(frame,time.monotonic()-started)
             elif isinstance(frame,np.ndarray) and (info:=read_info(frame,self.stop)) is not None:
                 if info_closed or read_info(self.frame(),self.stop)!=info:
                     raise ValueError('Troop Info did not settle before account recovery')

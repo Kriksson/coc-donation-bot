@@ -115,7 +115,7 @@ def stalled_season_bank_visible(frame):
     image=cv2.resize(frame,(1853,1048))
     for name,box in [('season_bank_shield',(725,20,1100,360)),
                      ('season_bank_plinth',(615,715,1220,1005)),
-                     ('season_bank_nose',(965,525,1120,700))]:
+                     ('season_bank_wall',(180,550,360,720))]:
         ref=_reference(name)
         if ref is None:return False
         x0,y0,x1,y1=box;region=image[y0:y1,x0:x1]
