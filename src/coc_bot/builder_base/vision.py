@@ -249,6 +249,14 @@ class BuilderReader(UpgradeReader):
         return {'point': (round(frame.shape[1]*.504), round(frame.shape[0]*.875)),
                 'name': candidate.name, 'cost': price, 'currency': candidate.currency}
 
+    def active_names(self, frame, kind=None):
+        names=super().active_names(frame,kind)
+        if self.menu_kind(frame)=='research':
+            # Native Sneaky Archer timer lettering can lose this one e in OCR.
+            # Correct this complete known name only, never an arbitrary unit.
+            return ['sneakyarcher' if n=='snakyarcher' else n for n in names]
+        return names
+
     def research_confirmation(self, frame, candidate):
         if compact(candidate.name)=='sneakyarcher':
             heading=self.white_text(crop(frame,(.35,.04,.65,.095)))

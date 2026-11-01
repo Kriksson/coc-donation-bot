@@ -197,10 +197,29 @@ class BuilderProgressionRunner(BuilderUpgradeRunner):
                 'balances_before':report['balances'],'gems_before':getattr(self,'research_gems',None)}
 
     def _verify_pending(self,state,kind,frame):
-        if super()._verify_pending(state,kind,frame):return True
         p=state.get('pending',{});level=p.get('target_level');before=p.get('balances_before',{})
         if (kind!='research' or p.get('kind')!=kind or type(level) is not int
-            or type(before.get('elixir')) is not int or type(p.get('gems_before')) is not int):return False
+            or type(before.get('elixir')) is not int or type(p.get('gems_before')) is not int):
+            return super()._verify_pending(state,kind,frame)
+        def running(image):
+            balances=self.reader.balances(image)
+            return (self.reader.menu_kind(image)=='research'
+                and self.reader.availability(image,'research')==(0,1)
+                and self.reader.active_names(image).count(compact(p['name']))>p.get('active_before',0)
+                and balances.get('elixir')==before['elixir']-p['cost']
+                and (type(before.get('gold')) is not int or balances.get('gold')==before['gold'])
+                and self.menu_gems(image)==p['gems_before'])
+        if running(frame) and not self.stopped() and running(self.capture.screenshot()):
+            from coc_bot.runtime.verification import resolve_receipt,fingerprint
+            original=dict(p)
+            state['last_completed']=state.pop('pending')|{'phase':'confirmed',
+                'receipt':'two_active_research_reads_and_payment'}
+            marker=state.get('deferred_receipt',{})
+            if (marker.get('account')==getattr(self.config,'account_tag',None)
+                and marker.get('fingerprint')==fingerprint(original)):
+                state.pop('deferred_receipt',None)
+            write_json(self.path,state);resolve_receipt(self.config,original)
+            return True
         def advanced(image):
             rows=[v for v in self.reader.rows(image) if compact(v['name'])==compact(p['name'])]
             return (self.reader.availability(image,'research')==(1,1) and len(rows)==1

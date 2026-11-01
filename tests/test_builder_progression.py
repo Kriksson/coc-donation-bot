@@ -257,6 +257,46 @@ class BuilderProgressionTests(unittest.TestCase):
         self.assertFalse(r._verify_pending(state,'research',object()))
         r.input.tap.assert_not_called()
 
+    @unittest.skipUnless(shutil.which('tesseract'),'Native research timer OCR is required')
+    def test_running_sneaky_archer_keeps_its_identity_when_timer_ocr_loses_one_e(self):
+        frame=self.fixture('sneaky-research-running.png');reader=BuilderProgressionReader()
+        self.assertEqual(reader.availability(frame,'research'),(0,1))
+        self.assertEqual(reader.active_names(frame),['sneakyarcher'])
+
+    def timed_research(self):
+        return self.pending_research()|{'cost':100000,'target_level':5,
+            'balances_before':{'gold':425018,'elixir':1871169},'gems_before':765}
+
+    def research_reader(self):
+        r=self.r;r.reader=Mock();r.reader.menu_kind.return_value='research'
+        r.reader.active_names.return_value=['sneakyarcher'];r.reader.availability.return_value=(0,1)
+        r.reader.balances.return_value={'gold':425018,'elixir':1771169}
+        r.reader.rows.return_value=[];r.menu_gems=Mock(return_value=765)
+        r.capture.screenshot.return_value=object()
+        return r
+
+    def test_timed_research_requires_two_named_busy_slot_and_exact_payment_observations(self):
+        from coc_bot.runtime.verification import fingerprint
+        r=self.research_reader();payment=self.timed_research()
+        state={'pending':payment,'deferred_receipt':{'account':getattr(r.config,'account_tag',None),
+                                                   'fingerprint':fingerprint(payment)}}
+        self.assertTrue(r._verify_pending(state,'research',object()))
+        self.assertNotIn('pending',state);self.assertNotIn('deferred_receipt',state)
+        self.assertEqual(state['last_completed']['receipt'],'two_active_research_reads_and_payment')
+        self.assertEqual(r.capture.screenshot.call_count,1);r.input.tap.assert_not_called()
+
+    def test_timed_research_retains_receipt_on_gem_balance_identity_or_second_frame_changes(self):
+        for mode in ('gems','elixir','gold','identity','second'):
+            r=self.research_reader();state={'pending':self.timed_research()}
+            first=object();second=r.capture.screenshot.return_value
+            if mode=='gems':r.menu_gems.return_value=764
+            if mode=='elixir':r.reader.balances.return_value={'gold':425018,'elixir':1771168}
+            if mode=='gold':r.reader.balances.return_value={'gold':None,'elixir':1771169}
+            if mode=='identity':r.reader.active_names.return_value=['ragedbarbarian']
+            if mode=='second':r.reader.availability.side_effect=lambda f,k:(1,1) if f is second else (0,1)
+            self.assertFalse(r._verify_pending(state,'research',first),mode)
+            self.assertEqual(state['pending'],self.timed_research());r.input.tap.assert_not_called()
+
     def test_paid_construction_recovery_only_reads_the_receipt(self):
         r=self.r;r.reader=Mock()
         write(r.path,{'pending':{'kind':'construction','row':{'name':'Archer Tower','cost':12000,'currency':'gold'},
