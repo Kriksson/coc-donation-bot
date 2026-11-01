@@ -521,7 +521,14 @@ class ArmyPreparation:
               and type(known) is int and 11<=known<=18 and account.get('town_hall')==known)
         hall=known if hint else self.army_hall()
         self.preferred_unit='electro_dragon' if hall>=11 else None
-        self.open();frame,cards,space=self.observe()
+        self.open()
+        try:frame,cards,space=self.observe()
+        except ValueError as exc:
+            if str(exc)!='Army cards do not match occupied camp space':raise
+            from coc_bot.progression.inactive_army import clear_inactive
+            if not clear_inactive(self):raise
+            logger.info('Removed inactive Super Troops; verified empty camps before preparing farming army')
+            frame,cards,space=self.observe()
         if self.preferred_unit and any(c.unit_id==self.preferred_unit and c.quantity>0 for c in cards):
             # Two matching owned-army observations already prove availability
             # (at least level one). Exact troop levels are not needed to choose
