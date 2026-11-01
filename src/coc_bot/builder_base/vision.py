@@ -252,18 +252,24 @@ class BuilderReader(UpgradeReader):
     def research_confirmation(self, frame, candidate):
         if compact(candidate.name)=='sneakyarcher':
             heading=self.white_text(crop(frame,(.35,.04,.65,.095)))
-            if (candidate.currency!='elixir' or not re.fullmatch(r'(?i)\s*upgrade\s+to\s+level\s+2\s*\??\s*',heading)
-                or not self.find(frame,'research_sneaky_archer',(.24,.25,.42,.63),threshold=.96)
-                or compact(self.label(frame,(.585,.256,.80,.292)))!='unlocksspecialabilitycloak'):
+            level=re.fullmatch(r'(?i)\s*upgrade\s+to\s+level\s+(\d{1,2})\s*\??\s*',heading)
+            if (candidate.currency!='elixir' or level is None or not 2<=int(level[1])<=30
+                or not self.find(frame,'research_sneaky_archer',(.24,.25,.42,.63),threshold=.96)):
                 return None
-            price=resource_amount(crop(frame,(.71,.845,.787,.89)),self.stop)
+            target=int(level[1])
+            if target==2:
+                if compact(self.label(frame,(.585,.256,.80,.292)))!='unlocksspecialabilitycloak':return None
+            elif compact(self.white_text(crop(frame,(.215,.73,.34,.78))))!='cloak':return None
+            # Higher levels have longer prices extending left of the old crop.
+            # The portrait AND native ability identify this otherwise unnamed unit.
+            price=resource_amount(crop(frame,(.68,.845,.787,.89)),self.stop)
             from coc_bot.upgrades.vision import currency
             if price!=candidate.cost or currency(crop(frame,(.788,.825,.824,.90)))!='elixir':return None
             green=cv2.inRange(cv2.cvtColor(crop(frame,(.675,.81,.832,.925)),cv2.COLOR_BGR2HSV),
                              (30,70,140),(90,255,255)).mean()/255
             if green<.3:return None
             return {'point':(round(frame.shape[1]*.751),round(frame.shape[0]*.87)),
-                    'name':candidate.name,'cost':price,'currency':'elixir','target_level':2}
+                    'name':candidate.name,'cost':price,'currency':'elixir','target_level':target}
         # This dialog does not print the troop's name. Require its distinctive
         # portrait AND ability title; a background menu row cannot prove identity.
         if (candidate.currency != 'elixir' or compact(candidate.name) != 'nightwitch'

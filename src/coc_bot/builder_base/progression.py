@@ -56,7 +56,7 @@ class BuilderProgressionReader(BuilderReader,ProgressionReader):
         for row in rows:
             if not row['name'] and self.single_new_wall(frame,row):
                 row.update(name='Wall',quantity=1)
-            row['name']={'archertowerr':'Archer Tower'}.get(compact(row['name']),row['name'])
+            row['name']={'archertowerr':'Archer Tower','lavalaunncher':'Lava Launcher'}.get(compact(row['name']),row['name'])
             name=compact(row['name']);x,y,bw,bh=row['box']
             if name=='builderhall' or self.menu_kind(frame)=='research':
                 row['target_level']=self.target_level(frame,row)

@@ -161,6 +161,29 @@ class BuilderProgressionTests(unittest.TestCase):
             self.assertIsNone(reader.confirmation(frame,candidate))
 
     @unittest.skipUnless(shutil.which('tesseract'),'OCR executable is required')
+    def test_archer_higher_level_requires_portrait_ability_and_complete_price(self):
+        frame=self.fixture('archer-level-five-confirmation.png');reader=BuilderProgressionReader()
+        candidate=Candidate('Sneaky Archer',100000,'elixir',(1,2))
+        result=reader.confirmation(frame,candidate)
+        self.assertIsNotNone(result);self.assertEqual(result['target_level'],5)
+        for wrong in (Candidate('Night Witch',100000,'elixir',(1,2)),
+                      Candidate('Sneaky Archer',10000,'elixir',(1,2)),
+                      Candidate('Sneaky Archer',100000,'gems',(1,2)),
+                      Candidate('Sneaky Archer',100000,'gold',(1,2))):
+            self.assertIsNone(reader.confirmation(frame,wrong))
+        for y0,y1,x0,x1 in [(350,500,571,702),(765,817,398,630)]:
+            bad=frame.copy();bad[y0:y1,x0:x1]=0
+            self.assertIsNone(reader.confirmation(bad,candidate))
+
+    @unittest.skipUnless(shutil.which('tesseract'),'OCR executable is required')
+    def test_native_lava_launcher_name_does_not_leave_an_affordable_builder_idle(self):
+        rows=BuilderProgressionReader().rows(self.fixture('new-lava-launcher-list.png'))
+        lava=next(v for v in rows if compact(v['name'])=='lavalauncher')
+        self.assertTrue(lava['new']);self.assertEqual((lava['cost'],lava['currency']),(3000000,'gold'))
+        self.assertIsNone(self.r.eligibility('buildings',Candidate(lava['name'],lava['cost'],lava['currency'],lava['point']),
+                                           {'gold':3421877,'elixir':1864538},(2,2)))
+
+    @unittest.skipUnless(shutil.which('tesseract'),'OCR executable is required')
     def test_locked_rows_prove_the_next_level_and_do_not_become_free_upgrades(self):
         frame=self.fixture('starter-research-complete.png');reader=BuilderProgressionReader()
         rows=reader.rows(frame)
