@@ -22,7 +22,18 @@ class BuilderProgressionTests(unittest.TestCase):
         letters=cv2.inRange(hsv,(0,0,205),(180,80,255))|cv2.inRange(hsv,(35,80,170),(90,255,255))
         self.assertEqual(wall_quantity('Wall x 17',letters,extra_templates=reader.wall_digit_templates()),17)
         self.assertIsNone(wall_quantity('Wall x 12',letters,extra_templates=reader.wall_digit_templates()))
-        self.assertEqual(reader.wall_digit_templates().keys(),{'1_builder_wall','7_builder_wall'})
+        self.assertEqual(reader.wall_digit_templates().keys(),{'1_builder_wall','7_builder_wall','6_builder_wall'})
+
+    def test_native_sixteen_stack_needs_its_actual_digit_not_an_ocr_substitution(self):
+        from coc_bot.progression.reader import wall_quantity
+        frame=self.fixture('free-wall-sixteen.png');reader=BuilderProgressionReader()
+        title=frame[669:703,round(1853*.775):round(1853*.925)]
+        hsv=cv2.cvtColor(title,cv2.COLOR_BGR2HSV)
+        letters=cv2.inRange(hsv,(0,0,205),(180,80,255))|cv2.inRange(hsv,(35,80,170),(90,255,255))
+        self.assertEqual(wall_quantity('Wall x 1&',letters,extra_templates=reader.wall_digit_templates()),16)
+        self.assertIsNone(wall_quantity('Wall x 17',letters,extra_templates=reader.wall_digit_templates()))
+        letters[:]=0
+        self.assertIsNone(wall_quantity('Wall x 1&',letters,extra_templates=reader.wall_digit_templates()))
 
     def test_last_wall_requires_exact_native_word_and_no_quantity_suffix(self):
         frame=self.fixture('last-new-wall.png');reader=BuilderProgressionReader()
@@ -235,7 +246,7 @@ class BuilderProgressionTests(unittest.TestCase):
 
     def test_free_walls_need_an_independent_quantity_decrement(self):
         r=self.r;r.reader=Mock();r.open_menu=Mock();r.scan=Mock();r.find_row=Mock(return_value=({},object()))
-        pending={'kind':'construction','row':{'name':'Wall','cost':0,'currency':'free','quantity':10},
+        pending={'kind':'construction','row':{'name':'Wall','new':True,'cost':0,'currency':'free','quantity':10},
                  'before':{'gold':5000,'elixir':8053,'gems':297}}
         with patch('coc_bot.progression.construction.controls',return_value=None),\
              patch('coc_bot.builder_base.resources.ResourceReader') as resource:
@@ -243,25 +254,72 @@ class BuilderProgressionTests(unittest.TestCase):
             for remaining,status in ((8,'needs_review'),(9,'started')):
                 write(r.path,{'pending':pending})
                 row={'name':'Wall','new':True,'quantity':remaining,'currency':'free','cost':0}
-                r.scan.return_value={'complete':True,'rows':[row]};r.reader.rows.return_value=[row]
+                r.scan.return_value={'complete':True,'unfiltered':True,'rows':[row]};r.reader.rows.return_value=[row]
                 self.assertEqual(BuilderConstruction(r).reconcile()['status'],status)
             write(r.path,{'pending':pending})
-            r.scan.return_value={'complete':True,'rows':[row]};r.reader.rows.return_value=[row|{'quantity':8}]
+            r.scan.return_value={'complete':True,'unfiltered':True,'rows':[row]};r.reader.rows.return_value=[row|{'quantity':8}]
             self.assertEqual(BuilderConstruction(r).reconcile()['status'],'needs_review')
         r.input.tap.assert_not_called()
 
     def test_known_remaining_stack_does_not_require_recognizing_an_unrelated_new_building(self):
         r=self.r;r.reader=Mock();r.open_menu=Mock();r.scan=Mock();r.find_row=Mock(return_value=({},object()))
-        pending={'kind':'construction','row':{'name':'Wall','cost':0,'currency':'free','quantity':18},
+        pending={'kind':'construction','row':{'name':'Wall','new':True,'cost':0,'currency':'free','quantity':18},
                  'before':{'gold':5000,'elixir':8053,'gems':297}}
         row={'name':'Wall','new':True,'quantity':17,'currency':'free','cost':0}
         unknown={'name':'','new':True,'quantity':None,'currency':'elixir','cost':4000000}
-        r.scan.return_value={'complete':True,'rows':[row,unknown]};r.reader.rows.return_value=[row,unknown]
+        r.scan.return_value={'complete':True,'unfiltered':True,'rows':[row,unknown]};r.reader.rows.return_value=[row,unknown]
         with patch('coc_bot.builder_base.resources.ResourceReader') as resource:
             resource.return_value.balances.return_value=pending['before']
             write(r.path,{'pending':pending})
             self.assertEqual(BuilderConstruction(r).reconcile()['status'],'started')
             pending['row']['quantity']=1;write(r.path,{'pending':pending})
-            r.scan.return_value={'complete':True,'rows':[unknown]}
+            r.scan.return_value={'complete':True,'unfiltered':True,'rows':[unknown]}
             self.assertEqual(BuilderConstruction(r).reconcile()['status'],'needs_review')
+        r.input.tap.assert_not_called()
+
+    def test_deferred_free_wall_uses_fresh_stable_balances_and_exact_inventory_decrement(self):
+        r=self.r;r.reader=Mock();r.open_menu=Mock();r.find_row=Mock(return_value=({},object()))
+        pending={'kind':'construction','row':{'name':'Wall','new':True,'cost':0,'currency':'free','quantity':17},
+                 'before':{'gold':2728877,'elixir':1013538,'gems':704}}
+        row={'name':'Wall','new':True,'cost':0,'currency':'free','quantity':16}
+        current={'gold':3313877,'elixir':1636538,'gems':765}
+        r.scan=Mock(return_value={'complete':True,'unfiltered':True,'rows':[row]});r.reader.rows.return_value=[row]
+        with patch('coc_bot.builder_base.resources.ResourceReader') as resource:
+            resource.return_value.balances.return_value=current
+            write(r.path,{'pending':pending,'deferred_receipt':{'retained':'marker'}})
+            result=BuilderConstruction(r).reconcile()
+        self.assertEqual(result['status'],'started');self.assertEqual(result['spent'],0)
+        state=read(r.path);self.assertNotIn('pending',state);self.assertNotIn('deferred_receipt',state)
+        self.assertEqual(state['last_completed']['after'],current)
+        self.assertEqual(state['last_completed']['remaining_after'],16)
+        self.assertEqual(state['last_completed']['receipt_method'],'free_wall_inventory')
+        r.input.tap.assert_not_called()
+
+    def test_free_receipt_cannot_bypass_count_filters_gems_or_counter_stability(self):
+        r=self.r;r.reader=Mock();r.open_menu=Mock();r.find_row=Mock(return_value=({},object()))
+        pending={'kind':'construction','row':{'name':'Wall','new':True,'cost':0,'currency':'free','quantity':17},
+                 'before':{'gold':2728877,'elixir':1013538,'gems':704}}
+        current={'gold':3313877,'elixir':1636538,'gems':765}
+        for count,unfiltered,gems,changing in [(17,True,765,False),(16,False,765,False),(16,True,703,False),(16,True,None,False),(16,True,765,True)]:
+            with self.subTest(count=count,unfiltered=unfiltered,gems=gems,changing=changing):
+                row={'name':'Wall','new':True,'cost':0,'currency':'free','quantity':count}
+                r.scan=Mock(return_value={'complete':True,'unfiltered':unfiltered,'rows':[row]});r.reader.rows.return_value=[row]
+                write(r.path,{'pending':pending})
+                with patch('coc_bot.builder_base.resources.ResourceReader') as resource:
+                    resource.return_value.balances.return_value=current|{'gems':gems}
+                    if changing:resource.return_value.balances.side_effect=[current,current|{'gems':764}]*6
+                    self.assertEqual(BuilderConstruction(r).reconcile()['status'],'needs_review')
+                self.assertEqual(read(r.path)['pending'],pending)
+        r.input.tap.assert_not_called()
+
+    def test_paid_construction_still_requires_its_original_payment_and_gem_receipt(self):
+        r=self.r;r.reader=Mock()
+        pending={'kind':'construction','row':{'name':'Archer Tower','cost':12000,'currency':'gold'},
+                 'before':{'gold':17000,'elixir':8053,'gems':704}}
+        for balances in ({'gold':3313877,'elixir':1636538,'gems':765},{'gold':5000,'elixir':8053,'gems':765}):
+            write(r.path,{'pending':pending})
+            with patch('coc_bot.builder_base.resources.ResourceReader') as resource:
+                resource.return_value.balances.return_value=balances
+                self.assertEqual(BuilderConstruction(r).reconcile()['status'],'needs_review')
+            self.assertEqual(read(r.path)['pending'],pending)
         r.input.tap.assert_not_called()

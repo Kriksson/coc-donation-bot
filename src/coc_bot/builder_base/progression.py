@@ -402,6 +402,11 @@ class BuilderConstruction:
             or type(observed.get('gems')) is not int
             or any(type(observed.get(k)) is not int for k in ('gold','elixir'))):
             return {'status':'needs_review','message':'Builder construction journal is incomplete'}
+        free_wall=(resource=='free' and cost==0 and compact(row.get('name',''))=='wall'
+                   and row.get('new') is True and type(row.get('quantity')) is int
+                   and 1<=row['quantity']<=500)
+        if resource=='free' and not free_wall:
+            return {'status':'needs_review','message':'Free construction is not a verified wall-stack receipt'}
         reader=ResourceReader(r.reader);expected=dict(observed)
         if resource in ('gold','elixir'):expected[resource]-=cost
         confirmed=False
@@ -417,9 +422,16 @@ class BuilderConstruction:
                 r.input.tap(*placement['cancel'],jitter=0)
                 if r.wait():return {'status':'needs_review'}
                 continue
-            if after==expected and placement is None:
+            # A deferred FREE wall can be checked days later, after legitimate
+            # collection or upgrades changed its balances. Its receipt is the
+            # independent stack decrement below, not a zero-value payment.
+            # Require stable fresh counters and no historical gem decrease.
+            free_balances=(free_wall and all(type(after.get(k)) is int and after[k]>=0
+                           for k in ('gold','elixir','gems')) and after['gems']>=observed['gems'])
+            if (after==expected or free_balances) and placement is None:
                 fresh=r.capture.screenshot()
-                if r.construction_controls(fresh) is None and reader.balances(fresh)==expected:
+                if r.construction_controls(fresh) is None and reader.balances(fresh)==after:
+                    if free_wall:expected=dict(after)
                     confirmed=True;break
             if r.wait(.5):return {'status':'needs_review'}
         if not confirmed:
@@ -438,7 +450,8 @@ class BuilderConstruction:
             # disappearing final stack still requires every New row readable.
             invalid_stack=any(type(v.get('quantity')) is not int or v.get('currency')!='free'
                               or v.get('cost')!=0 for v in matches)
-            if (not inventory['complete'] or invalid_stack or len(matches)>1
+            if (not inventory['complete'] or inventory.get('unfiltered') is not True
+                or invalid_stack or len(matches)>1
                 or not matches and unknown_new or left!=(row.get('quantity') or 0)-1):
                 return {'status':'needs_review','message':'Free-wall quantity did not independently verify'}
             if matches:
@@ -451,6 +464,8 @@ class BuilderConstruction:
                     or second[0].get('cost')!=0):
                     return {'status':'needs_review','message':'Free-wall quantity changed during receipt verification'}
         state['last_completed']=state.pop('pending')|{'phase':'confirmed','after':expected}
+        if free_wall:
+            state['last_completed'].update(receipt_method='free_wall_inventory',remaining_after=left)
         state.pop('deferred_receipt',None)
         write_json(r.path,state)
         from coc_bot.runtime.verification import resolve_receipt
