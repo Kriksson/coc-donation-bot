@@ -126,17 +126,6 @@ class ProgressionReader(UpgradeReader):
         if np.count_nonzero(edges)<50:return False
         return float(cv2.matchTemplate(edges,target,cv2.TM_CCOEFF_NORMED).max())>=.94
 
-    def availability(self,frame,kind):
-        observed=super().availability(frame,kind)
-        if observed is not None or kind!='buildings':return observed
-        from coc_bot.upgrades.digits import read_digits
-        raw=read_digits(crop(frame,(.739,.945,.788,.982)),fraction=True,
-                        extra_templates=counter_digit_variants()) or ''
-        match=re.fullmatch(r'(\d)/(\d)',raw)
-        if not match:return None
-        free,total=map(int,match.groups())
-        return (free,total) if 0<=free<=total<=6 and total else None
-
     def target_level(self, frame, row):
         """Read only the black numeric target-level badge, never thumbnail art."""
         h,w=frame.shape[:2]

@@ -5,11 +5,18 @@ import re
 import tempfile
 import csv
 import io
+from functools import lru_cache
 
 import cv2
 import numpy as np
 
 from coc_bot.runtime.processes import run_process
+
+
+@lru_cache(maxsize=2)
+def _goblin_counter(kind):
+    name='goblin-research-counter.png' if kind=='research' else 'goblin-counter.png'
+    return cv2.imread(str(Path(__file__).with_name('assets')/name))
 
 
 def compact(text):
@@ -197,9 +204,26 @@ class UpgradeReader:
         if box is None: return None
         raw = read_digits(crop(frame,box),fraction=True) or ''
         match = re.fullmatch(r'(\d)/(\d)',raw)
+        if not match and kind in ('buildings','research'):
+            from coc_bot.progression.reader import counter_digit_variants
+            raw=read_digits(crop(frame,box),fraction=True,extra_templates=counter_digit_variants()) or ''
+            match=re.fullmatch(r'(\d)/(\d)',raw)
         if not match:
             return None
         free,total=map(int,match.groups())
+        if kind in ('buildings','research'):
+            # The Goblin event adds a gem-only worker to the displayed fraction
+            # when regular workers are busy. Never count it as a free builder
+            # or research slot, including when reconciling a real upgrade.
+            canvas=cv2.resize(frame,(1853,1048));reference=_goblin_counter(kind)
+            bounds=(.735,.895,.79,.947) if kind=='buildings' else (.802,.895,.86,.947)
+            region=crop(canvas,bounds)
+            if reference is not None:
+                _,score,_,(x,y)=cv2.minMaxLoc(cv2.matchTemplate(region,reference,cv2.TM_CCOEFF_NORMED))
+                observed=region[y:y+reference.shape[0],x:x+reference.shape[1]]
+                if score>=.96 and observed.mean()>=reference.mean()*.85:
+                    if not 0<=free<=total or total<2:return None
+                    free=max(0,free-1);total-=1
         maximum=6 if kind=='buildings' else 1
         return (free,total) if 0 <= free <= total <= maximum and total>0 else None
 

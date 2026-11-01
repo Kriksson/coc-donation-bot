@@ -6,9 +6,129 @@ import numpy as np
 import hashlib
 
 
-@lru_cache(maxsize=24)
+@lru_cache(maxsize=64)
 def _reference(name):
     return cv2.imread(str(Path(__file__).with_name('assets')/(name+'.png')))
+
+
+def reward_reveal_visible(frame):
+    """Wait through known chest/reward animations without unrelated OCR/input."""
+    if not isinstance(frame,np.ndarray) or not 1.6<frame.shape[1]/frame.shape[0]<1.95:return False
+    image=cv2.resize(frame,(1853,1048))
+    for pairs in ((('free_chest_left',(230,260,365,690)),('free_chest_right',(1325,260,1480,680))),
+                  (('free_reward_floor',(15,795,365,1048)),('free_reward_column',(1570,185,1710,650)))):
+        verified=True
+        for name,box in pairs:
+            ref=_reference(name)
+            if ref is None:verified=False;break
+            x0,y0,x1,y1=box;region=image[y0:y1,x0:x1]
+            _,score,_,(x,y)=cv2.minMaxLoc(cv2.matchTemplate(region,ref,cv2.TM_CCOEFF_NORMED))
+            observed=region[y:y+ref.shape[0],x:x+ref.shape[1]]
+            if score<.98 or observed.mean()<ref.mean()*.85:verified=False;break
+        if verified:return True
+    return False
+
+
+def free_reward_skip_confirm_button(frame):
+    """Confirm only the notice explicitly saying rewards will still be received."""
+    if not isinstance(frame,np.ndarray) or not 1.6<frame.shape[1]/frame.shape[0]<1.95:return None
+    image=cv2.resize(frame,(1853,1048));point=None
+    for name,box in [('free_skip_confirm_title',(610,270,1240,385)),
+                     ('free_skip_confirm_message',(530,405,1330,540)),
+                     ('free_skip_confirm_yes',(925,570,1330,785))]:
+        ref=_reference(name)
+        if ref is None:return None
+        x0,y0,x1,y1=box;region=image[y0:y1,x0:x1]
+        _,score,_,(x,y)=cv2.minMaxLoc(cv2.matchTemplate(region,ref,cv2.TM_CCOEFF_NORMED))
+        observed=region[y:y+ref.shape[0],x:x+ref.shape[1]]
+        if score<.97 or observed.mean()<ref.mean()*.90:return None
+        if name=='free_skip_confirm_yes':
+            point=(round((x0+x+ref.shape[1]/2)*frame.shape[1]/1853),
+                   round((y0+y+ref.shape[0]/2)*frame.shape[0]/1048))
+    return point
+
+
+def free_reward_skip_button(frame):
+    """Skip an already-delivered reward reveal, requiring Continue and Skip."""
+    if not isinstance(frame,np.ndarray) or not 1.6<frame.shape[1]/frame.shape[0]<1.95:return None
+    image=cv2.resize(frame,(1853,1048));point=None
+    for name,box in [('free_reward_continue',(785,875,1100,1010)),
+                     ('free_reward_skip',(1590,890,1853,1010)),
+                     ('free_reward_floor',(15,795,365,1048))]:
+        ref=_reference(name)
+        if ref is None:return None
+        x0,y0,x1,y1=box;region=image[y0:y1,x0:x1]
+        _,score,_,(x,y)=cv2.minMaxLoc(cv2.matchTemplate(region,ref,cv2.TM_CCOEFF_NORMED))
+        observed=region[y:y+ref.shape[0],x:x+ref.shape[1]]
+        threshold=.96 if name=='free_reward_continue' else .97
+        if score<threshold or observed.mean()<ref.mean()*.90:return None
+        if name=='free_reward_skip':
+            point=(round((x0+x+ref.shape[1]/2)*frame.shape[1]/1853),
+                   round((y0+y+ref.shape[0]/2)*frame.shape[0]/1048))
+    return point
+
+
+def free_chest_tap_point(frame,stop=None):
+    """Already-open reward chest: native hall plus unused hammer and rarity."""
+    if not isinstance(frame,np.ndarray) or not 1.6<frame.shape[1]/frame.shape[0]<1.95:return None
+    image=cv2.resize(frame,(1853,1048))
+    for name,box in [('free_chest_left',(230,260,365,690)),
+                     ('free_chest_right',(1325,260,1480,680))]:
+        ref=_reference(name)
+        if ref is None:return None
+        x0,y0,x1,y1=box;region=image[y0:y1,x0:x1]
+        _,score,_,(x,y)=cv2.minMaxLoc(cv2.matchTemplate(region,ref,cv2.TM_CCOEFF_NORMED))
+        observed=region[y:y+ref.shape[0],x:x+ref.shape[1]]
+        if score<.98 or observed.mean()<ref.mean()*.85:return None
+    ref=_reference('free_chest_hammer');region=image[825:930,730:1100]
+    if ref is None:return None
+    _,score,_,(x,y)=cv2.minMaxLoc(cv2.matchTemplate(region,ref,cv2.TM_CCOEFF_NORMED))
+    if score<.94 or region[y:y+ref.shape[0],x:x+ref.shape[1]].mean()<ref.mean()*.85:return None
+    # The Tap caption disappears after the first strike. The remaining native
+    # bright hammers and rarity label still prove this exact free reveal stage.
+    ref=_reference('free_chest_tap');region=image[210:315,820:1020]
+    prompted=ref is not None and cv2.matchTemplate(region,ref,cv2.TM_CCOEFF_NORMED).max()>=.94
+    if not prompted:
+        from coc_bot.upgrades.vision import compact,text,crop
+        try:rarity=compact(text(crop(image,(.42,.705,.59,.765)),stop=stop))
+        except (OSError,RuntimeError,TimeoutError):return None
+        if rarity not in ('common','rare','epic','legendary'):return None
+    return round(frame.shape[1]*.50),round(frame.shape[0]*.54)
+
+
+def stalled_season_bank_visible(frame):
+    """The inspected control-free season payout scene, not a purchase/reveal."""
+    if not isinstance(frame,np.ndarray) or not 1.6<frame.shape[1]/frame.shape[0]<1.95:return False
+    image=cv2.resize(frame,(1853,1048))
+    for name,box in [('season_bank_shield',(725,20,1100,360)),
+                     ('season_bank_plinth',(615,715,1220,1005)),
+                     ('season_bank_nose',(965,525,1120,700))]:
+        ref=_reference(name)
+        if ref is None:return False
+        x0,y0,x1,y1=box;region=image[y0:y1,x0:x1]
+        _,score,_,(x,y)=cv2.minMaxLoc(cv2.matchTemplate(region,ref,cv2.TM_CCOEFF_NORMED))
+        observed=region[y:y+ref.shape[0],x:x+ref.shape[1]]
+        if score<.96 or observed.mean()<ref.mean()*.85:return False
+    return True
+
+
+def hammer_jam_close_button(frame):
+    """Close the inspected free announcement, never its Watch action."""
+    if not isinstance(frame,np.ndarray) or not 1.6<frame.shape[1]/frame.shape[0]<1.95:return None
+    image=cv2.resize(frame,(1853,1048));point=None
+    for name,box in [('hammer_jam_title',(480,645,1380,760)),
+                     ('hammer_jam_message',(415,740,1440,855)),
+                     ('hammer_jam_close',(1520,50,1650,175))]:
+        ref=_reference(name)
+        if ref is None:return None
+        x0,y0,x1,y1=box;region=image[y0:y1,x0:x1]
+        _,score,_,(x,y)=cv2.minMaxLoc(cv2.matchTemplate(region,ref,cv2.TM_CCOEFF_NORMED))
+        observed=region[y:y+ref.shape[0],x:x+ref.shape[1]]
+        if score<.97 or observed.mean()<ref.mean()*.90:return None
+        if name=='hammer_jam_close':
+            point=(round((x0+x+ref.shape[1]/2)*frame.shape[1]/1853),
+                   round((y0+y+ref.shape[0]/2)*frame.shape[0]/1048))
+    return point
 
 
 def event_ended_button(frame):

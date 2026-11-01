@@ -249,6 +249,21 @@ class AccountNavigator:
             raise ValueError('Account controls changed or are covered; open your home village and retry')
         self.tap(point)
 
+    def recover_stalled_bank(self,frame,elapsed):
+        from coc_bot.vision.notices import stalled_season_bank_visible
+        if elapsed<30 or self.__dict__.get('_season_bank_relaunched') or not stalled_season_bank_visible(frame):return False
+        from coc_bot.accounts.startup import unresolved
+        if unresolved(self.session.config):return False
+        self.check()
+        if not stalled_season_bank_visible(self.frame()):return False
+        self.check()
+        self._season_bank_relaunched=True
+        logger.warning('Season payout animation stalled without controls — relaunching once; account identity still requires verification')
+        self.session.app.force_stop()
+        self.check()
+        self.session.app.launch()
+        return True
+
     def menu(self):
         frame = self.frame()
         nav = self.session.navigator
@@ -260,10 +275,14 @@ class AccountNavigator:
         from coc_bot.vision.battle_menu import direct_match_button
         from coc_bot.upgrades.vision import UpgradeReader
         from coc_bot.progression.troop_info import read_info
+        from coc_bot.vision.notices import reward_reveal_visible
         sidebar_reader=UpgradeReader(self.stop)
         sidebar_closed=info_closed=picker_closed=False
-        for _ in range(20):
-            if recover_home_overlay(nav,frame):pass
+        started=time.monotonic();unknown=0
+        for _ in range(200):
+            if time.monotonic()-started>360:raise ValueError('Account notices did not finish; verification remains pending')
+            if recover_home_overlay(nav,frame):unknown=0
+            elif reward_reveal_visible(frame):unknown=0  # Native reward animation; no input.
             elif isinstance(frame,np.ndarray) and (info:=read_info(frame,self.stop)) is not None:
                 if info_closed or read_info(self.frame(),self.stop)!=info:
                     raise ValueError('Troop Info did not settle before account recovery')
@@ -286,6 +305,11 @@ class AccountNavigator:
                   or find(frame,'switch_heading',(.71,.30,1,.48)) or home_build_control_visible(frame)
                   or nav.classifier._clan_chat_anchor_visible(frame) or army_editor_close_button(frame,self.stop)
                   or direct_match_button(frame,stop_check=self.stop) is not None):break
+            else:
+                unknown+=1
+                if unknown>=20:
+                    if self.recover_stalled_bank(frame,time.monotonic()-started):unknown=0
+                    else:raise ValueError('The game has not finished reloading. Return home in Live view and retry.')
             if interrupted_sleep(1,self.stop):self.check()
             frame=self.frame()
         else:raise ValueError('The game has not finished reloading. Return home in Live view and retry.')
