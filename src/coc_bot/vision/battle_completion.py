@@ -42,6 +42,12 @@ class BattleCompletionDetector:
         # when the exact label and Return Home button were present.
         spent = self._match(_gold_letters(small), "results_troops_expended",
                             (340, 320, 620, 400), gold=True)
+        if spent is None:
+            # The current native font raster differs slightly on some results
+            # screens. Match its inspected lettering at the same threshold;
+            # never lower the spatial, button or two-observation safeguards.
+            spent = self._match(_gold_letters(small), "results_troops_expended_current",
+                                (340, 320, 620, 400), gold=True)
         if button is None:
             return None
         self.last_reason = "missing_troops_label"

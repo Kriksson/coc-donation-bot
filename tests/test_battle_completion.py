@@ -20,6 +20,15 @@ def result_frame():
 
 
 class BattleCompletionTests(TestCase):
+    def test_current_native_one_star_victory_is_recognized_without_timer_fallback(self):
+        frame=cv2.imread(str(Path(__file__).parent/'fixtures/battle_completion/one-star-victory.png'))
+        for size in ((1853,1048),(960,540),(1280,724)):
+            self.assertIsNotNone(BattleCompletionDetector().detect(cv2.resize(frame,size)))
+        for x,y,w,h in ((800,660,300,48),(800,840,270,130)):
+            bad=frame.copy();bad[y:y+h,x:x+w]=0
+            self.assertIsNone(BattleCompletionDetector().detect(bad))
+        self.assertIsNone(BattleCompletionDetector().detect((frame*.35).astype('uint8')))
+
     def test_changing_village_and_army_behind_gold_label_does_not_hide_results(self):
         reference = cv2.imread(str(ASSETS/'results_troops_expended.png'))
         # Keep only the reference's warm-colored lettering; replace everything
