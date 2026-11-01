@@ -769,6 +769,27 @@ class ProgressionReaderTests(TestCase):
         frame[25:85,925:1265]=0
         self.assertIsNone(wall_balance(frame,reader,'gold'))
 
+    @skipUnless(shutil.which('tesseract'),'Native wall title OCR is required')
+    def test_starter_wall_ignores_only_the_clipped_roof_and_reads_the_real_payment(self):
+        from coc_bot.progression.walls import wall_panel
+        from coc_bot.progression.bulk_walls import control
+        frame=cv2.imread(str(FIXTURES/'starter-wall-roof-selection.png'))
+        result=wall_panel(frame)
+        self.assertIsNotNone(result)
+        self.assertEqual((result['level'],result['cost'],result['currency'],result['upgrade']),(1,1000,'gold',True))
+        self.assertIsNotNone(control(frame,'upgrade_more'))
+
+    @skipUnless(shutil.which('tesseract'),'Native wall title OCR is required')
+    def test_starter_wall_still_blocks_missing_price_currency_label_or_a_clipped_digit(self):
+        from coc_bot.progression.walls import wall_panel
+        frame=cv2.imread(str(FIXTURES/'starter-wall-roof-selection.png'))
+        for y0,y1,x0,x1 in [(738,790,920,1073),(738,790,1028,1073),(845,898,905,1050)]:
+            bad=frame.copy();bad[y0:y1,x0:x1]=0
+            result=wall_panel(bad)
+            self.assertFalse(result and result['upgrade'] and result['cost']==1000 and result['currency']=='gold')
+        clipped=frame.copy();clipped[680:730,804:817]=(120,250,230)
+        self.assertIsNone(wall_panel(clipped))
+
     def test_native_troop_info_requires_name_level_housing_label_and_close(self):
         from coc_bot.progression.troop_info import read_info
         frame=cv2.imread(str(FIXTURES/'giant-info.png'))

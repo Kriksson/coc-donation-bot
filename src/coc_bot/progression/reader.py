@@ -47,9 +47,17 @@ def selected_title(frame, bounds, stop=None):
     mask = cv2.inRange(cv2.cvtColor(image,cv2.COLOR_BGR2HSV),(15,35,220),(65,200,255))
     count,labels,stats,_=cv2.connectedComponentsWithStats(mask)
     clean=np.zeros_like(mask)
-    for i in range(1,count):
-        if stats[i,3]>image.shape[0]*.40 and stats[i,4]>15:
-            clean[labels==i]=255
+    parts=[i for i in range(1,count) if stats[i,3]>image.shape[0]*.40 and stats[i,4]>15]
+    typical=float(np.median([stats[i,3] for i in parts])) if parts else 0
+    for i in parts:
+        x,y,w,h,_=stats[i]
+        clipped=x==0 or y==0 or x+w==image.shape[1] or y+h==image.shape[0]
+        if clipped:
+            # The inspected roof fragment is short, wide and cut by this crop.
+            # A clipped character must block the title, not lose a leading digit.
+            if h>=typical*.8 or w<=h*1.6:return ''
+            continue
+        clean[labels==i]=255
     return text(255-clean,stop=stop)
 
 

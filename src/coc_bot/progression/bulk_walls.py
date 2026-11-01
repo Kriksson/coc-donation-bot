@@ -20,6 +20,10 @@ def controls(frame, name, bounds=(0,.66,.72,.90)):
         if score<.96:break
         found.append((x+left+ref.shape[1]//2,y+top+ref.shape[0]//2))
         scores[max(0,y-ref.shape[0]):y+ref.shape[0],max(0,x-ref.shape[1]):x+ref.shape[1]]=0
+    if not found and name=='upgrade_label':
+        # The inspected starter tile shades the same label differently. Keep
+        # the full native variant and the original .96 matching threshold.
+        return controls(frame,'upgrade_label_starter',bounds)
     return found
 
 
