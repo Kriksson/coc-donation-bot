@@ -278,7 +278,12 @@ class VerifiedExecutor:
         self.send_taps([target])
         # No retry of a map tap, including when capture/OCR fails after it.
         for attempt in range(2):
-            self.session._sleep(.2)
+            # The rapid connection omits InputController's random settle.
+            # Let single-use cards finish rising before reading their health
+            # bars; otherwise a premature screenshot costs a whole extra
+            # recognition cycle. This waits, never resends the deployment.
+            self.session._sleep(.45 if attempt==0 and self.touch is not None
+                                and card.kind in ('hero','siege') else .2)
             after_frame=self.frame()
             cv2.imwrite(str(self.path.with_suffix('.after.png')),after_frame)
             try:

@@ -160,3 +160,15 @@ class RapidExecutorTests(TestCase):
         with TemporaryDirectory() as root,patch('coc_bot.adb.multitouch.Multitouch') as factory:
             exe,session=self.executor(root);session.input.dry_run=True
             self.assertTrue(exe.run().success);factory.assert_not_called()
+
+    def test_rapid_hero_waits_for_rising_health_bar_without_repeating_tap(self):
+        with TemporaryDirectory() as root:
+            exe,session=self.executor(root);exe.touch=Mock()
+            frame=exe.frame.return_value
+            hero=ArmyCard('h',(100,500,70,95),'king','hero',1)
+            exe.select=Mock(return_value=(frame,hero));exe.resolve=Mock(return_value=hero)
+            with patch('coc_bot.attack.executor.hero_health_visible',side_effect=[False,True]):
+                exe.deploy('king',MapPoint(.055,.5))
+            session._sleep.assert_called_once_with(.45)
+            exe.touch.taps.assert_called_once()
+            self.assertEqual(exe.result.verified_taps,1)
