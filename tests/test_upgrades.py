@@ -94,7 +94,7 @@ class UpgradeImageTests(unittest.TestCase):
         from coc_bot.upgrades.vision import confirmation_price
         frame=cv2.imread(str(self.fixtures/'discounted-army-camp-confirmation.png'))
         cell=frame[838:978,1155:1451]
-        for readings in ([None,125_000,None,None],[250_000,125_000,125_000,None],[None,None,None,None]):
+        for readings in ([None,125_000,None,None,None],[250_000,125_000,125_000,None,None],[None]*5):
             with patch('coc_bot.upgrades.vision.resource_amount',side_effect=readings):
                 self.assertIsNone(confirmation_price(cell))
 
@@ -105,6 +105,15 @@ class UpgradeImageTests(unittest.TestCase):
         for name,price,resource in [('Spring Trap',130_000,'gold'),('Spring Trap',6_500,'gold'),
                                     ('Spring Trap',65_000,'elixir'),('Spring Trap',65_000,'gems'),
                                     ('Bomb',65_000,'gold')]:
+            self.assertIsNone(reader.confirmation(frame,Candidate(name,price,resource,(1,1))))
+
+    def test_discounted_elixir_storage_requires_matching_payable_price(self):
+        frame=cv2.imread(str(self.fixtures/'discounted-elixir-storage-confirmation.png'))
+        reader=UpgradeReader()
+        self.assertIsNotNone(reader.confirmation(frame,Candidate('Elixir Storage',250_000,'gold',(1,1))))
+        for name,price,resource in [('Elixir Storage',500_000,'gold'),('Elixir Storage',25_000,'gold'),
+                                    ('Elixir Storage',250_000,'elixir'),('Elixir Storage',250_000,'gems'),
+                                    ('Gold Storage',250_000,'gold')]:
             self.assertIsNone(reader.confirmation(frame,Candidate(name,price,resource,(1,1))))
 
     def test_clan_castle_heading_corrects_only_the_inspected_whole_name(self):

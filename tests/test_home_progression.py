@@ -565,6 +565,16 @@ class ProgressionPolicyTests(TestCase):
         runner.capture.screenshot.return_value=cv2.imread(str(FIXTURES/'placement.png'))
         self.assertIsNone(Construction(runner).locate_space())
 
+    def test_current_home_preview_recognizes_cancel_but_not_disabled_check(self):
+        frame=cv2.imread(str(FIXTURES/'placement-current-disabled.png'))
+        found=controls(frame)
+        self.assertIsNotNone(found)
+        self.assertLess(abs(found['cancel'][0]-894),4)
+        self.assertLess(abs(found['cancel'][1]-502),4)
+        self.assertIsNone(found['confirm'])
+        frame[478:528,868:919]=0
+        self.assertIsNone(controls(frame))
+
     def test_electro_dragon_family_includes_support_balloons_and_rage(self):
         def card(u,n,kind='troop'):return ArmyCard(u,(0,0,100,140),u,kind,n,stable=True)
         plan=farming_plan([card('electro_dragon',8),card('balloon',4),card('rage',5,'spell')])
