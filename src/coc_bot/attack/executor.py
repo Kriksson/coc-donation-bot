@@ -11,7 +11,7 @@ import numpy as np
 from loguru import logger
 
 from coc_bot.attack.army import check_stop, resolve_live_card, resolve_just_depleted
-from coc_bot.attack.camera import compare_camera
+from coc_bot.attack.camera import compare_camera, CameraFeatures
 from coc_bot.attack.projection import input_area, step_points, validate_geometry
 from coc_bot.attack.survey import affine
 from coc_bot.attack.battle_gate import BattleFrameGate
@@ -91,6 +91,7 @@ class VerifiedExecutor:
         self.reference,self.catalog=reference,catalog
         self.stop=session.client.stop_check
         self.matrix=np.eye(3)
+        self._camera_features=CameraFeatures()
         self.last_frame=None
         self.battle_gate=BattleFrameGate(session.attack_nav.battlefield_ready,
             lambda frame, **evidence: active_battle_ready(frame,stop_check=self.stop,**evidence))
@@ -99,8 +100,23 @@ class VerifiedExecutor:
         self.skipped_units=set()
         self._deployment_observation=None
         self.spam=spam
+        self.touch=None
+        self._outer_probe_pending=projection.source=='registered_default_outer_ring'
         self.path=Path(journal_dir or session.config.data_dir/'debug'/'attack-executions')/(uuid.uuid4().hex+'.jsonl')
         self.path.parent.mkdir(parents=True,exist_ok=True)
+
+    def send_taps(self, targets, *, batch=False):
+        if self.touch is None:
+            if len(targets)==1 and not batch:self.session.input.tap(*targets[0],jitter=0)
+            else:self.session.input.tap_many(targets,settle_ms=0)
+            return
+        from coc_bot.vision import recorder
+        recorder.note_action('tap_batch',points=targets,dry_run=False)
+        try:self.touch.taps(targets)
+        except OSError as exc:
+            # A disconnect can happen after any down/up packet. Never switch
+            # transports or repeat a group whose delivery is uncertain.
+            raise ValueError('Rapid touch connection lost; no taps replayed') from exc
 
     def note(self, event, **fields):
         # Write intent before sending input. Interrupted runs cannot be resumed.
@@ -152,7 +168,7 @@ class VerifiedExecutor:
         if not ready:
             cv2.imwrite(str(self.path.with_suffix('.blocked.png')),frame)
             raise ValueError('Battle controls changed; deployment paused')
-        self.matrix=affine(compare_camera(self.reference,frame))
+        self.matrix=affine(compare_camera(self.reference,frame,cache=self._camera_features))
         scale=np.hypot(self.matrix[0,0],self.matrix[1,0])
         if abs(scale-1)>.01: raise ValueError('Battle zoom changed; map must be rebuilt')
         return frame
@@ -216,7 +232,7 @@ class VerifiedExecutor:
                 raise ValueError('Unit is already deployed: '+unit_id)
             x,y,w,h=card.box
             self.note('selection_intent',unit_id=unit_id,attempt=attempt+1,box=list(card.box))
-            self.session.input.tap(x+w//2,y+h//2,jitter=0)
+            self.send_taps([(x+w//2,y+h//2)])
             for observation in range(2):
                 self.session._sleep(.2)
                 frame=self.frame()
@@ -243,6 +259,8 @@ class VerifiedExecutor:
         h,w=frame.shape[:2];target=tuple(round(n) for n in self.target(point))
         if not input_area(*target,w,h): raise ValueError('Target moved under game controls')
         before=card.quantity
+        if self._outer_probe_pending and card.kind!='troop':
+            raise ValueError('Outer ring needs a verified troop deployment before support')
         if card.kind in ('hero','siege') and hero_health_visible(frame,card):
             raise ValueError('Unit is already deployed: '+unit_id)
         self.note('map_tap_intent',unit_id=unit_id,quantity_before=before,target=target)
@@ -257,7 +275,7 @@ class VerifiedExecutor:
         self.result.first_attempt_at=self.result.first_attempt_at or sent_at
         self.result.uncertain_tap=True
         cv2.imwrite(str(self.path.with_suffix('.before.png')),frame)
-        self.session.input.tap(*target,jitter=0)
+        self.send_taps([target])
         # No retry of a map tap, including when capture/OCR fails after it.
         for attempt in range(2):
             self.session._sleep(.2)
@@ -279,6 +297,7 @@ class VerifiedExecutor:
             if good:
                 self.result.uncertain_tap=False
                 self.result.verified_taps+=1
+                if card.kind=='troop':self._outer_probe_pending=False
                 self.result.first_deploy_at=self.result.first_deploy_at or sent_at
                 if card.kind=='hero':
                     self.deployed_heroes.add(unit_id)
@@ -306,7 +325,7 @@ class VerifiedExecutor:
             return
         x,y,w,h=card.box
         self.note('ability_intent',unit_id=unit_id)
-        self.session.input.tap(x+w//2,y+h//2,jitter=0)
+        self.send_taps([(x+w//2,y+h//2)])
         self.abilities.add(unit_id)
         self.note('ability_sent',unit_id=unit_id)
 
@@ -321,6 +340,11 @@ class VerifiedExecutor:
         if unit_id not in supported:
             raise ValueError('Only supported ground troops can use deployment batches')
         if not 1<=len(points)<=(20 if spam else 5):raise ValueError('Invalid deployment batch')
+        if self._outer_probe_pending:
+            self.note('outer_ring_probe',unit_id=unit_id)
+            self.deploy(unit_id,points[0])
+            if len(points)>1:self.deploy_batch(unit_id,points[1:],spam=spam)
+            return
         if len(points)==1:return self.deploy(unit_id,points[0])
         check_stop(self.stop)
         frame,_=self.position(points[0]);frame,card=self.select(frame,unit_id)
@@ -354,7 +378,7 @@ class VerifiedExecutor:
         if spam:
             for start in range(0,len(targets),5):
                 check_stop(self.stop)
-                self.session.input.tap_many(targets[start:start+5],settle_ms=0)
+                self.send_taps(targets[start:start+5],batch=True)
         else:self.session.input.tap_many(targets)
         self.note('map_batch_sent',unit_id=unit_id,count=len(targets),spam=spam)
         for attempt in range(2):
@@ -400,6 +424,17 @@ class VerifiedExecutor:
                         raise ValueError('Live army differs from the reviewed plan: '+entry.unit_id)
                     if card.kind in ('hero','siege') and hero_health_visible(frame,card):
                         raise ValueError('Unit is already deployed: '+entry.unit_id)
+            if self.spam and getattr(self.session.input,'dry_run',True) is False:
+                from coc_bot.adb.multitouch import Multitouch
+                touch=Multitouch(self.session.client,(frame.shape[1],frame.shape[0]))
+                try:self.touch=touch.__enter__()
+                except AdbStopped:raise
+                except (ValueError, OSError, RuntimeError):
+                    # Startup has sent no touches. The existing transport is
+                    # still safe here; no fallback is allowed after a send.
+                    touch.close()
+                    self.note('rapid_touch_unavailable')
+                else:self.note('rapid_touch_ready')
             for number,step in enumerate(self.plan.steps):
                 check_stop(self.stop);self.note('step',number=number,action=step.action,unit_id=step.unit_id)
                 if step.unit_id in self.skipped_units:
@@ -442,5 +477,7 @@ class VerifiedExecutor:
             self.result.reason=f'{type(exc).__name__}: {exc}'
             raise
         finally:
+            if self.touch is not None:
+                self.touch.close();self.touch=None
             self.note('finished',**vars(self.result))
         return self.result

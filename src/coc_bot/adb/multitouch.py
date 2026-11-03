@@ -43,7 +43,7 @@ class Multitouch:
 
     def check_stop(self):
         if self.stopping():
-            raise AdbStopped('Zoom cancelled')
+            raise AdbStopped('Touch input cancelled')
 
     def __enter__(self):
         self.check_stop()
@@ -108,6 +108,32 @@ class Multitouch:
         for finger, point in sorted(list(self.active.items()), reverse=True):
             with suppress(OSError, ValueError):
                 self._send(1, finger, point)
+
+    def taps(self, points):
+        """Send at most five paced taps over the already verified connection.
+
+        Validate the entire group before touching. Stop/disconnect never causes
+        a replay; release a held finger even if Stop arrives after finger-down.
+        The caller owns selection, geometry and native count verification.
+        """
+        if not isinstance(points, (list, tuple)) or not 1 <= len(points) <= 5:
+            raise ValueError('A touch group needs one to five points')
+        for point in points:
+            if not isinstance(point, (list, tuple)) or len(point) != 2:
+                raise ValueError('Invalid touch point')
+            touch_packet(0, 0, *point, self.width, self.height)
+        if not self.connection or self.active:
+            raise ValueError('Touch session is unavailable or already active')
+        try:
+            for point in points:
+                self.check_stop()
+                self._send(0, 0, point)
+                time.sleep(.01)
+                self._send(1, 0, point)
+                self.check_stop()
+                time.sleep(.01)
+        finally:
+            self.release_fingers()
 
     def pinch(self, *, start_span=.60, end_span=.16, duration=.6, steps=24):
         if (type(steps) is not int or not 4 <= steps <= 120 or

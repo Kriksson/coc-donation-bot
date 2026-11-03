@@ -65,7 +65,7 @@ def registered_segments(observation, to_reference, width, height):
     return result
 
 
-def survey(session, *, zoom=True, full_map=False, compact=False):
+def survey(session, *, zoom=True, full_map=False, compact=False, outer_fallback=False):
     """Caller owns the lease. Select no map points; at most twelve camera pans.
 
     The gesture can retain zoom in the game. The legacy engine is never resumed
@@ -187,6 +187,15 @@ def survey(session, *, zoom=True, full_map=False, compact=False):
         views.append({'frame':current,'transform':transform.tolist(),'segments':len(observation.segments)})
         evidence={}
         projection=fit_projection(segments,w,h,survey_evidence=evidence)
+        if projection is None and outer_fallback and not full_map and index in (2,len(gestures)):
+            from coc_bot.attack.outer_ring import outer_projection
+            outer=outer_projection(previous,current,stop=stop)
+            if outer is not None:
+                (evidence_dir/'outer-ring.json').write_text(json.dumps(outer.to_dict()))
+                logger.info('Using freshly registered default-scenery outer ring; first troop requires native confirmation')
+                return {'reference':current,'previous':previous,'current':current,'mosaic':current,
+                        'projection':outer,'segments':[],'views':index+1,'captured_at':time.time(),
+                        'mosaic_offset':[0,0],'mosaic_bounds':[0,0,w,h]}
         if (projection and (not full_map or index>=7)) or index==len(gestures): break
         dx,dy=gestures[index]
         if index>=8 and projection is None:

@@ -1,10 +1,23 @@
 """Evidence for camera movement; a pinch request alone never establishes readiness."""
 import math
+import hashlib
 import cv2
 import numpy as np
 
 
-def compare_camera(before, after):
+class CameraFeatures:
+    """Cache only reference descriptors, never observations or transforms."""
+    def __init__(self):
+        self.key=None
+        self.pyramid={}
+
+    def bind(self, image):
+        key=(image.shape,hashlib.sha256(image.tobytes()).digest())
+        if key!=self.key:
+            self.key=key;self.pyramid.clear()
+
+
+def compare_camera(before, after, *, cache=None):
     result = {'verified': False, 'reason': 'insufficient stable map features', 'scale': None,
               'zoomed_out': False, 'maximum_zoom_confirmed': False,
               'battlefield_mapping_ready': False}
@@ -19,6 +32,7 @@ def compare_camera(before, after):
     mask[:int(h*.23),int(w*.76):] = 0
     mask[int(h*.70):,:int(w*.48)] = 0
     orb = cv2.ORB_create(nfeatures=5000)
+    if cache is not None:cache.bind(before)
     k2, d2 = orb.detectAndCompute(cv2.cvtColor(after, cv2.COLOR_BGR2GRAY), mask)
     if d2 is None or len(d2) < 2:
         return result
@@ -26,9 +40,13 @@ def compare_camera(before, after):
     # Large pinches exceed ORB's normal scale range. Match a small image pyramid,
     # then convert every source point back into original screenshot coordinates.
     for factor in (1., .75, .5, .35, 1.25):
-        small = cv2.resize(before, None, fx=factor, fy=factor)
-        small_mask = cv2.resize(mask, (small.shape[1], small.shape[0]), interpolation=cv2.INTER_NEAREST)
-        k1, d1 = orb.detectAndCompute(cv2.cvtColor(small, cv2.COLOR_BGR2GRAY), small_mask)
+        if cache is not None and factor in cache.pyramid:
+            k1,d1=cache.pyramid[factor]
+        else:
+            small = cv2.resize(before, None, fx=factor, fy=factor)
+            small_mask = cv2.resize(mask, (small.shape[1], small.shape[0]), interpolation=cv2.INTER_NEAREST)
+            k1, d1 = orb.detectAndCompute(cv2.cvtColor(small, cv2.COLOR_BGR2GRAY), small_mask)
+            if cache is not None:cache.pyramid[factor]=(k1,d1)
         if d1 is None or len(d1) < 2:
             continue
         matcher = cv2.BFMatcher(cv2.NORM_HAMMING)

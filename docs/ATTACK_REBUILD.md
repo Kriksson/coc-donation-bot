@@ -400,3 +400,28 @@ pixel recipes. The final deployment resumed normal requests with both pending
 markers cleared. All 34 protected calibration/template/routine files and saved
 application settings remained unchanged. Retention removed about 1.08 GiB of
 generated evidence across the test; labeled collection data was excluded.
+# Rapid automatic deployment and the outer-ring fallback
+
+Automatic attacks reuse one pinned scrcpy touch connection for troop groups,
+spells, hero selection, and abilities. Groups contain at most five paced taps;
+Stop is checked between touches. Selection, camera alignment, and exact native
+count changes remain mandatory. A failed connection after input never falls
+back to shell taps or replays the group. Startup failure, before any touches,
+may use the original input path. Dry runs never open the touch connection.
+Only the fixed reference image's camera descriptors are cached; each new frame
+still establishes its own transform with the same feature and inlier tests.
+
+When the red perimeter cannot be fitted, automatic Home attacks may register
+the supported default scenery's existing 44-tile terrain reference in two fresh,
+stationary frames. Its outer band is used only when the two fits agree and no
+visible red boundary contradicts the build square. The first troop is deployed
+individually and must show a native count decrease before any burst. A missing
+count change ends deployment without retry. Other sceneries still require the
+normal red-boundary survey; missing geometry leaves the opponent safely.
+
+This is deliberately limited to registered terrain. Supercell calls sceneries
+cosmetic, but [Legendary scenery can be over six times larger visually](https://supercell.com/en/games/clashofclans/blog/news/the-legendary-scenery/).
+That does not establish identical screen coordinates or legal decorative
+outskirts. The default terrain matched the saved default opponent; six other
+saved scenery views did not satisfy registration. No universal outer-area
+claim or fixed screen-edge fallback follows from those observations.

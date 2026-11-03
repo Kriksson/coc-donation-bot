@@ -176,7 +176,8 @@ def run_planned_attack(farmer, *, automatic=False):
     remember_camera(session,home)
     failure=None
     try:
-        observed=survey(session,compact=bool(automatic and getattr(prepared_catalog,'prepared_hall',None)==2))
+        observed=survey(session,compact=bool(automatic and getattr(prepared_catalog,'prepared_hall',None)==2),
+                        outer_fallback=automatic)
         if observed['projection'] is None:
             raise ValueError('Deployment boundary coverage could not be verified; no deployment sent')
         if automatic:
