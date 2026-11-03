@@ -5,10 +5,9 @@ from loguru import logger
 from coc_bot.attack.army import agree_cards, check_stop, read_army
 from coc_bot.attack.battle_gate import BattleFrameGate
 from coc_bot.attack.plans import ArmyEntry, MapPoint, PlanStep, mass_edrag_plan
+from coc_bot.attack.reinforcements import CLAN_CASTLE, SIEGE_UNITS, available_castle
 
 
-SIEGE_UNITS = {'wall_wrecker', 'battle_blimp', 'stone_slammer', 'siege_barracks',
-               'log_launcher', 'flame_flinger', 'battle_drill'}
 RAGE_UNITS = {'rage', 'rage_spell'}
 
 
@@ -16,7 +15,7 @@ def supported_identity(card, *, progression=False):
     from coc_bot.progression.army import TROOPS
     return (card.kind == 'troop' and (card.unit_id == 'electro_dragon' or progression and card.unit_id in TROOPS)
             or card.kind == 'spell' and card.unit_id in RAGE_UNITS
-            or card.kind == 'siege' and card.unit_id in SIEGE_UNITS
+            or card.kind == 'siege' and card.unit_id in SIEGE_UNITS | {CLAN_CASTLE}
             or card.kind == 'hero' and bool(card.unit_id))
 
 
@@ -35,6 +34,9 @@ def automatic_plan(cards, *, progression=False, deploy_line=None):
     army = []
     seen = set()
     for card in cards:
+        if card.unit_id == CLAN_CASTLE and not available_castle(card):
+            logger.info('Automatic attack: Clan Castle unavailable; continuing without reinforcements')
+            continue
         if not supported_identity(card):
             logger.info('Automatic attack: leaving extra card unused ({})', card.unit_id or card.slot)
             continue
@@ -47,7 +49,7 @@ def automatic_plan(cards, *, progression=False, deploy_line=None):
         supported = (
             card.kind == 'troop' and card.unit_id == 'electro_dragon' and card.quantity <= 20
             or card.kind == 'spell' and card.unit_id in RAGE_UNITS and card.quantity <= 11
-            or card.kind == 'siege' and card.unit_id in SIEGE_UNITS and card.quantity == 1
+            or card.kind == 'siege' and card.unit_id in SIEGE_UNITS | {CLAN_CASTLE} and card.quantity == 1
             or card.kind == 'hero' and card.quantity == 1
         )
         if not supported:
@@ -115,6 +117,8 @@ def scan_army(session, catalog):
         observed = agree_cards(before, read_army(second, 'battle', catalog, stop_check=stop))
         after = []
         for card in observed:
+            if card.unit_id == CLAN_CASTLE and not available_castle(card):
+                continue
             if not supported_identity(card, progression=progression):
                 logger.debug('Automatic army: ignoring unused card {} ({})',card.slot,card.unit_id or 'unrecognized')
                 continue

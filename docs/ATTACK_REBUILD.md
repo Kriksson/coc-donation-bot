@@ -39,6 +39,19 @@ incomplete opponent maps still block deployment. Skipped
 matches use the bounded leave/recovery path, followed by home/camera/chat verification.
 Unsuccessful attempts use a retry cooldown before resource-driven farming retries.
 
+Automatic attacks also deploy available Clan Castle troops. The standalone
+Castle card is identified by its native shield rim and active background, with
+the clan's emblem masked out. It shares the single reinforcement slot with a
+siege machine; the bot never plans both. A selected siege carries the Castle's
+troops normally. With no siege selected, the Castle deploys once on the troop
+edge, after troops/Rage and before heroes. This also applies to progression
+armies below TH11. Empty, missing or unreadable Castle cards are skipped without
+blocking an otherwise usable army. A Castle map tap is only recorded as verified
+when its native card becomes depleted; an uncertain tap is never repeated.
+Existing gem-free troop requests remain separate and attacks do not wait for a
+donation or purchase missing reinforcements. Custom programmed tap sequences
+are unchanged.
+
 Normal game connection and Farm navigation calibration are still needed. Artwork
 recognition uses the installed icon pack and any existing reviewed card references,
 but never needs `routine.json`. Unfamiliar hero skins may be unreadable and cause a

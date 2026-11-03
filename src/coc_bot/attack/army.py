@@ -12,6 +12,7 @@ import numpy as np
 
 from coc_bot.adb.client import AdbStopped
 from coc_bot.runtime.processes import run_process, ProcessStopped
+from coc_bot.attack.reinforcements import CLAN_CASTLE, SIEGE_UNITS, castle_card_quantity
 
 
 def check_stop(stop_check):
@@ -55,10 +56,8 @@ class UnitCatalog:
             if np.count_nonzero(alpha) < 100:
                 continue
             stats = (units or {}).get(path.stem)
-            siege_ids = {'wall_wrecker','battle_blimp','stone_slammer','siege_barracks',
-                         'log_launcher','flame_flinger','battle_drill'}
             kind = stats.category if stats else ('spell' if path.parent.name == 'spells' else
-                                                 'siege' if path.stem in siege_ids else 'troop')
+                                                 'siege' if path.stem in SIEGE_UNITS else 'troop')
             self.templates.append((path.stem, kind, image[:,:,:3], alpha))
 
     def add_references(self, frame, cards, *, picker=False):
@@ -406,6 +405,11 @@ def read_army(frame, page, catalog, *, stop_check=None):
         check_stop(stop_check)
         x,y,bw,bh = box
         cell = frame[y:y+bh,x:x+bw]
+        castle_quantity = castle_card_quantity(cell) if page == 'battle' else None
+        if castle_quantity is not None:
+            cards.append(ArmyCard(f'card-{index}', box, CLAN_CASTLE, 'siege', castle_quantity,
+                                  quantity_source='native Clan Castle availability'))
+            continue
         if page == 'army_confirmation' and x < w*.43 and bh > h*.40:
             unit_id,kind,score,margin = None,'hero',0.,0.
             quantity,source = 1,'single hero card; availability unverified'
@@ -423,9 +427,12 @@ def read_army(frame, page, catalog, *, stop_check=None):
             else: unit_id,kind,score,margin = catalog.identify(cell,kind=hint,stop_check=stop_check)
             quantity = read_badge(cell,stop_check=stop_check)
             source = 'xN badge' if quantity is not None else 'unreadable'
+            if unit_id == CLAN_CASTLE:
+                # A remembered emblem alone cannot prove live availability.
+                quantity,source = None,'Clan Castle availability unverified'
             if kind == 'hero' and quantity is None:
                 quantity,source = 1,'identified hero card; availability checked during execution'
-            if quantity is None and kind == 'siege':
+            if quantity is None and kind == 'siege' and unit_id != CLAN_CASTLE:
                 quantity,source = 1,'single siege card; availability unverified'
             if page == 'battle' and unit_id is None and quantity is None:
                 purple = cv2.inRange(cv2.cvtColor(cell,cv2.COLOR_BGR2HSV),(115,60,80),(165,255,255))
@@ -452,6 +459,12 @@ def resolve_live_card(frame, catalog, unit_id, *, stop_check=None):
     for index,box in enumerate(visible_card_boxes(frame,'battle',catalog,stop_check=stop_check)):
         check_stop(stop_check)
         x,y,w,h=box;cell=frame[y:y+h,x:x+w]
+        if unit_id == CLAN_CASTLE:
+            quantity = castle_card_quantity(cell)
+            if quantity is not None:
+                found.append(ArmyCard(f'card-{index}', box, unit_id, 'siege', quantity,
+                                      quantity_source='native Clan Castle availability'))
+            continue
         match=catalog.identify_reference(cell,stop_check=stop_check)
         if not match or match[0]!=unit_id: continue
         _,kind,score,margin=match
@@ -473,6 +486,10 @@ def resolve_just_depleted(frame, catalog, before, *, stop_check=None, spent=1):
     if type(spent) is not int or not 1<=spent<=20 or before.quantity!=spent or before.kind=='hero':
         raise ValueError('No verified empty card: '+before.unit_id)
     x,y,w,h=before.box;cell=frame[y:y+h,x:x+w]
+    if before.unit_id == CLAN_CASTLE:
+        if castle_card_quantity(cell) != 0:
+            raise ValueError('No verified empty Clan Castle card')
+        return replace(before, quantity=0, quantity_source='verified depleted Clan Castle')
     identity=catalog.identify_reference(cell,stop_check=stop_check)
     if not identity or identity[0]!=before.unit_id or not depleted_card(cell):
         raise ValueError('No verified empty card: '+before.unit_id)

@@ -5,6 +5,7 @@ This contract does not itself authorize execution.
 """
 from dataclasses import asdict, dataclass
 import math
+from coc_bot.attack.reinforcements import CLAN_CASTLE
 
 
 @dataclass(frozen=True)
@@ -73,7 +74,11 @@ class AttackPlan:
                 raise ValueError('Invalid or duplicate army entry')
             if entry.kind in ('hero', 'siege') and entry.quantity != 1:
                 raise ValueError('Heroes and siege entries must have quantity one')
+            if entry.unit_id == CLAN_CASTLE and entry.kind != 'siege':
+                raise ValueError('Clan Castle uses the single reinforcement deployment slot')
             inventory[entry.unit_id] = entry
+        if CLAN_CASTLE in inventory and sum(e.kind == 'siege' for e in self.army) > 1:
+            raise ValueError('Clan Castle and siege machines share one deployment slot')
         used, activated = {}, set()
         if not self.steps or len(self.steps) > 300:
             raise ValueError('A plan needs between one and 300 steps')
@@ -135,7 +140,7 @@ def mass_edrag_plan(army: tuple[ArmyEntry, ...], line: tuple[MapPoint, MapPoint]
     steps = [PlanStep('deploy_line', dragons[0].unit_id, dragons[0].quantity, line)]
     for unit_id, targets in (spell_targets or {}).items():
         steps.append(PlanStep('cast_points', unit_id, len(targets), targets))
-    for entry in army:
+    for entry in sorted(army, key=lambda e: e.kind == 'hero'):
         if entry.kind in ('siege', 'hero'):
             steps.append(PlanStep('deploy_point', entry.unit_id, 1, (center,)))
     heroes = [entry for entry in army if entry.kind == 'hero']

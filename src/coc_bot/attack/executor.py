@@ -17,6 +17,11 @@ from coc_bot.attack.survey import affine
 from coc_bot.attack.battle_gate import BattleFrameGate
 from coc_bot.adb.client import AdbStopped
 from coc_bot.vision.battle_menu import active_battle_ready
+from coc_bot.attack.reinforcements import CLAN_CASTLE
+
+
+class ReinforcementsUnavailable(ValueError):
+    """Optional Castle is unavailable before a map tap, never after one."""
 
 
 @dataclass
@@ -91,6 +96,7 @@ class VerifiedExecutor:
             lambda frame, **evidence: active_battle_ready(frame,stop_check=self.stop,**evidence))
         self.result=ExecutionResult(False,'not started')
         self.deployed_heroes=set();self.abilities=set();self.skipped_abilities=set()
+        self.skipped_units=set()
         self._deployment_observation=None
         self.spam=spam
         self.path=Path(journal_dir or session.config.data_dir/'debug'/'attack-executions')/(uuid.uuid4().hex+'.jsonl')
@@ -118,6 +124,8 @@ class VerifiedExecutor:
             logger.info('Attack executor: {} ({} verified deployments)',fields['reason'],fields['verified_taps'])
         elif event=='ability_skipped':
             logger.info('Hero ability skipped: {} — no usable health bar; continuing remaining steps',fields['unit_id'])
+        elif event=='reinforcements_skipped':
+            logger.info('Clan Castle skipped — {}; continuing the attack',fields['reason'])
 
     def frame(self):
         self._deployment_observation=None
@@ -164,7 +172,8 @@ class VerifiedExecutor:
             try:return frame,self.resolve(frame,unit_id)
             except ValueError as exc:
                 if 'hidden or ambiguous' not in str(exc): raise
-        raise ValueError('Unit not found after a bounded army-bar search: '+unit_id)
+        error = ReinforcementsUnavailable if unit_id == CLAN_CASTLE else ValueError
+        raise error('Unit not found after a bounded army-bar search: '+unit_id)
 
     def target(self, point):
         x,y=self.projection.pixel(point)
@@ -200,7 +209,8 @@ class VerifiedExecutor:
         for attempt in range(2):
             check_stop(self.stop)
             if card.quantity is None or card.quantity<=0:
-                raise ValueError('Unit count or availability is unverified: '+unit_id)
+                error = ReinforcementsUnavailable if unit_id == CLAN_CASTLE else ValueError
+                raise error('Unit count or availability is unverified: '+unit_id)
             if selected_card(frame,card):return frame,card
             if card.kind in ('hero','siege') and hero_health_visible(frame,card):
                 raise ValueError('Unit is already deployed: '+unit_id)
@@ -211,16 +221,20 @@ class VerifiedExecutor:
                 self.session._sleep(.2)
                 frame=self.frame()
                 try:card=self.resolve(frame,unit_id)
-                except ValueError:
+                except ValueError as exc:
                     if observation==0:continue
+                    if unit_id == CLAN_CASTLE:
+                        raise ReinforcementsUnavailable(str(exc)) from exc
                     raise
                 confirmed=bool(selected_card(frame,card))
                 self.note('selection_observation',unit_id=unit_id,confirmed=confirmed,box=list(card.box))
                 if card.quantity is None or card.quantity<=0:
-                    raise ValueError('Unit count or availability is unverified: '+unit_id)
+                    error = ReinforcementsUnavailable if unit_id == CLAN_CASTLE else ValueError
+                    raise error('Unit count or availability is unverified: '+unit_id)
                 if confirmed:return frame,card
         cv2.imwrite(str(self.path.with_suffix('.selection.png')),frame)
-        raise ValueError('Unit selection was not confirmed: '+unit_id)
+        error = ReinforcementsUnavailable if unit_id == CLAN_CASTLE else ValueError
+        raise error('Unit selection was not confirmed: '+unit_id)
 
     def deploy(self, unit_id, point):
         frame,target=self.position(point)
@@ -260,7 +274,7 @@ class VerifiedExecutor:
                     if attempt==0: continue
                     raise
             self.note('deployment_observation',unit_id=unit_id,quantity=after.quantity)
-            good=(after.quantity==before-1 if card.kind not in ('hero','siege') else
+            good=(after.quantity==before-1 if card.kind not in ('hero','siege') or unit_id == CLAN_CASTLE else
                   hero_health_visible(after_frame,after) or card.kind=='siege' and after.quantity==0)
             if good:
                 self.result.uncertain_tap=False
@@ -371,13 +385,25 @@ class VerifiedExecutor:
             # hidden hero blocks here, not halfway through a dragon deployment.
             for entry in self.plan.army:
                 if any(step.unit_id==entry.unit_id for step in self.plan.steps):
-                    frame,card=self.find(frame,entry.unit_id)
+                    try:
+                        frame,card=self.find(frame,entry.unit_id)
+                        if entry.unit_id == CLAN_CASTLE and card.quantity != 1:
+                            raise ReinforcementsUnavailable('No available Clan Castle troops')
+                    except ReinforcementsUnavailable as exc:
+                        self.skipped_units.add(entry.unit_id)
+                        self.note('reinforcements_skipped',reason=str(exc))
+                        # find() may have scrolled the army bar; never reuse
+                        # the earlier frame for the next preflight unit.
+                        frame=self.frame()
+                        continue
                     if card.kind!=entry.kind or card.quantity is None or card.quantity<entry.quantity:
                         raise ValueError('Live army differs from the reviewed plan: '+entry.unit_id)
                     if card.kind in ('hero','siege') and hero_health_visible(frame,card):
                         raise ValueError('Unit is already deployed: '+entry.unit_id)
             for number,step in enumerate(self.plan.steps):
                 check_stop(self.stop);self.note('step',number=number,action=step.action,unit_id=step.unit_id)
+                if step.unit_id in self.skipped_units:
+                    continue
                 if step.action=='wait':
                     self._deployment_observation=None;self.session._sleep(step.seconds)
                 elif step.action=='ability': self.ability(step.unit_id)
@@ -390,8 +416,19 @@ class VerifiedExecutor:
                             self.plan.strategy=='farming_ground' and step.action=='deploy_line'):
                         for start in range(0,len(points),5):self.deploy_batch(step.unit_id,points[start:start+5])
                     else:
-                        for point in points:self.deploy(step.unit_id,point)
+                        for point in points:
+                            try:
+                                self.deploy(step.unit_id,point)
+                            except ReinforcementsUnavailable as exc:
+                                self.skipped_units.add(step.unit_id)
+                                self.note('reinforcements_skipped',reason=str(exc))
+                                break
             self.result.success,self.result.reason=True,'All planned deployments verified'
+            if self.skipped_units:
+                self.result.reason='Available planned deployments verified; Clan Castle unavailable'
+                if not self.result.verified_taps:
+                    self.result.success=False
+                    self.result.reason='No available units were deployed'
             if self.skipped_abilities:
                 self.result.reason+='; unavailable abilities skipped: '+', '.join(sorted(self.skipped_abilities))
         except ValueError as exc:

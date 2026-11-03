@@ -1,6 +1,7 @@
 """Capacity-aware farming compositions and predictable deployment families."""
 from coc_bot.progression.profiles import HOME_PROFILES, HOUSING
 from coc_bot.attack.plans import ArmyEntry, AttackPlan, PlanStep, MapPoint
+from coc_bot.attack.reinforcements import CLAN_CASTLE, available_castle
 
 GROUND = ('giant', 'wall_breaker', 'barbarian', 'wizard', 'archer')
 TROOPS = set(HOUSING)
@@ -83,6 +84,8 @@ def farming_plan(cards, *, deploy_line=None):
             steps.append(PlanStep('wait', seconds=1))
     extra = []
     for card in cards:
+        if card.unit_id == CLAN_CASTLE and not available_castle(card):
+            continue
         if card.kind not in ('hero','siege','spell') or not card.unit_id:
             continue
         if card.kind == 'spell' and card.unit_id not in ('rage','rage_spell'):
