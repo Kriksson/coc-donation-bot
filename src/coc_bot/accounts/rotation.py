@@ -12,6 +12,7 @@ import random
 from loguru import logger
 
 from coc_bot.accounts.store import read, write
+from coc_bot.accounts.watch import DonorWatch
 
 VISIT_WORK = ('requests', 'upgrades', 'farm', 'builder_base', 'layouts')
 
@@ -115,6 +116,7 @@ class AccountFleet:
         self.finish_action=False
         self.activity='Preparing account rotation'
         self._next=None
+        self._watch=DonorWatch(clock)
 
     def __getattr__(self,name):
         current=self.__dict__.get('current')
@@ -196,7 +198,7 @@ class AccountFleet:
             write(self.rotation.path,state)
         if account['id']==state['primary_id']:
             visit=getattr(self.current,'_visit',None)
-            if now-started<state.get('next_watch_seconds',state['watch_seconds']):return False
+            if not self._watch.ready(state.get('next_watch_seconds',state['watch_seconds'])):return False
             target=self.rotation.next_account(now)
             if target is None:return False
             # A fresh visible request earns a further chat pass before leaving.
@@ -270,6 +272,7 @@ class AccountFleet:
         if main is None or 'donating' not in main['roles']:raise ValueError('Main donating account is unavailable')
         with self.store.scope():session=DebugSession()
         self.rotation.resume(self.clock())
+        self._watch=DonorWatch(self.clock)
         try:
             with DeviceLease(session.config.adb_device) as lease:
                 from coc_bot.accounts.startup import recognize_loaded
@@ -290,7 +293,13 @@ class AccountFleet:
                         self._initialize_schedule(account)
                         self.current._fleet_should_yield=lambda:self._checkpoint(account,started)
                         visit=getattr(self.current,'_visit',None)
-                        self.current._fleet_work_order=lambda:visit.order() if visit else self.rotation.work_order(account['id'])
+                        self._watch.begin_visit()
+                        primary=account['id']==main['id']
+                        # Maintenance and account travel incur chat time debt.
+                        # Repay it at idle checkpoints; never interrupt actions.
+                        self.current._fleet_work_order=lambda: (() if primary and not self._watch.funded() else
+                            visit.order() if visit else self.rotation.work_order(account['id']))
+                        if primary:self.current._fleet_chat_seconds=self._watch.credit
                         self.current._fleet_after_step=lambda:setattr(self,'_chat_due',True)
                         self.current._fleet_work_attempted=lambda kind:self.rotation.work_attempted(account['id'],kind,self.clock())
                         detour=self.rotation.load().get('donation_detour')

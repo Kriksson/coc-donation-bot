@@ -179,7 +179,12 @@ class RotationTests(unittest.TestCase):
                 _has_donate_request=lambda _:False,request_stop=Mock())
             def run():
                 if len(visited)==3:fleet.cancel.set();return
+                if account['original']:
+                    now[0]+=120  # Maintenance does not count as chat watching.
+                    self.assertEqual(bot._fleet_work_order(),())
+                    self.assertFalse(bot._fleet_should_yield())
                 now[0]+=301 if account['original'] else 101
+                if account['original']:bot._fleet_chat_seconds(301)
                 self.assertTrue(bot._fleet_should_yield())
             bot.run_owned=run
             return bot

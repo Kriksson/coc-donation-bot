@@ -215,9 +215,10 @@ class ProgressionPolicyTests(TestCase):
             runner.reader.availability.return_value=(2,2);runner.eligibility.return_value=None
             runner.stopped.return_value=False;runner.wait.return_value=False;runner.state.return_value={}
             runner.capture.screenshot.return_value=frame;runner.reader.confirmation.return_value=None
-            runner.reader.menu_kind.return_value=None
+            runner.reader.menu_kind.return_value='buildings'
+            runner.reader.rows.return_value=[row|{'target_level':2,'quantity':25}]
             with patch('coc_bot.progression.walls.wall_panel',side_effect=[before,before,before|{'level':2}]),\
-                 patch('coc_bot.progression.walls.balance_amount',side_effect=[2000,1000]):
+                 patch('coc_bot.progression.walls.wall_balance',side_effect=[2000,1000]):
                 report=WallUpgrade(runner).run(row)
             self.assertEqual(report['status'],'started')
             self.assertEqual(runner.input.tap.call_count,2)
@@ -225,6 +226,23 @@ class ProgressionPolicyTests(TestCase):
             state=json.loads(runner.path.read_text())
             self.assertNotIn('pending',state)
             self.assertEqual(state['last_completed']['level_after'],2)
+
+    def test_missing_wall_queue_blocks_before_intent_or_payment(self):
+        from coc_bot.progression.walls import WallUpgrade
+        row={'name':'Wall','currency':'gold','cost':5000,'point':(100,200)}
+        panel={'level':3,'cost':5000,'currency':'gold','upgrade':True,'point':(500,800)}
+        runner=Mock();runner.stop=None;frame=np.zeros((1048,1853,3),np.uint8)
+        runner.find_row.return_value=(row,frame);runner.reader.balances.return_value={'gold':15739}
+        runner.eligibility.return_value=None;runner.stopped.return_value=False;runner.wait.return_value=False
+        runner.capture.screenshot.return_value=frame;runner.reader.menu_kind.return_value='buildings'
+        runner.reader.rows.return_value=[row|{'quantity':225,'target_level':None}]
+        with patch('coc_bot.progression.walls.wall_panel',return_value=panel),\
+             patch('coc_bot.progression.walls.wall_balance',return_value=15739),\
+             patch('coc_bot.progression.walls.write_json') as write,\
+             patch('coc_bot.runtime.verification.save_frame'):
+            self.assertEqual(WallUpgrade(runner).run(row)['status'],'blocked')
+        write.assert_not_called()
+        runner.input.tap.assert_called_once_with(100,200,jitter=0)
 
     def test_wall_unreadable_home_balance_blocks_before_payment(self):
         from coc_bot.progression.walls import WallUpgrade

@@ -137,6 +137,7 @@ class GoalFleetTests(ClanRoutingTests):
 
     def test_primary_refill_cannot_starve_due_accounts_after_its_full_watch_window(self):
         fleet=self.fleet(self.same);visit=fleet.current._visit
+        fleet._watch.started=0;fleet._watch.credit(1001)
         self.assertTrue(fleet._checkpoint(self.same,0))
         self.assertEqual(fleet._next,self.source['id'])
         self.assertTrue(fleet._visit_suspended)
@@ -149,7 +150,9 @@ class GoalFleetTests(ClanRoutingTests):
 
     def test_primary_keeps_its_watch_window_and_waits_when_nobody_is_due(self):
         fleet=self.fleet(self.same)
-        self.assertFalse(fleet._checkpoint(self.same,200))  # Only 801 of 900 seconds.
+        fleet._watch.started=200;fleet._watch.credit(801)
+        self.assertFalse(fleet._checkpoint(self.same,200))  # Only 801 verified chat seconds.
+        fleet._watch.started=0;fleet._watch.credit(200)
         state=fleet.rotation.load();state['visits'][self.source['id']]={'next_visit_at':2000}
         write(fleet.rotation.path,state)
         self.assertFalse(fleet._checkpoint(self.same,0))
@@ -157,6 +160,7 @@ class GoalFleetTests(ClanRoutingTests):
 
     def test_primary_handoff_waits_for_requests_and_unresolved_actions(self):
         fleet=self.fleet(self.same)
+        fleet._watch.started=0;fleet._watch.credit(1001)
         fleet.current._has_donate_request.return_value=True
         self.assertFalse(fleet._checkpoint(self.same,0))
         fleet.current._has_donate_request.return_value=False
@@ -233,6 +237,47 @@ class WallReceiptTests(unittest.TestCase):
 
 
 class BulkWallTests(unittest.TestCase):
+    @unittest.skipUnless(shutil.which('tesseract'),'Native badge rejection uses OCR fallback')
+    def test_compact_native_wall_badge_keeps_the_before_target_level(self):
+        import cv2
+        from coc_bot.progression.reader import ProgressionReader
+        frame=cv2.imread(str(Path(__file__).parent/'fixtures/resource_visits/wall-compact-level-four.png'))
+        reader=ProgressionReader(None);row={'box':[1358,310,495,67]}
+        self.assertEqual(reader.target_level(frame,row),4)
+        frame[351:375,1366:1391]=0
+        self.assertIsNone(reader.target_level(frame,row))
+
+    def test_native_red_five_thousand_is_unaffordable_not_unknown(self):
+        import cv2
+        from coc_bot.progression.bulk_walls import payments
+        frame=cv2.imread(str(Path(__file__).parent/'fixtures/resource_visits/wall-starter-red-five.png'))
+        prices=payments(frame)
+        self.assertEqual(len(prices),1)
+        self.assertEqual((prices[0]['price'],prices[0]['currency'],prices[0]['red']),(5000,'gold',True))
+        # Missing currency must never become a spendable price.
+        frame[740:790,1034:1064]=0
+        self.assertEqual(payments(frame),[])
+
+    @unittest.skipUnless(shutil.which('tesseract'),'Native wall heading OCR is required')
+    def test_red_five_count_agrees_with_price_and_has_subtraction_control(self):
+        import cv2
+        from coc_bot.progression.bulk_walls import selection
+        frame=cv2.imread(str(Path(__file__).parent/'fixtures/resource_visits/wall-starter-red-five.png'))
+        value=selection(frame,'gold')
+        self.assertEqual((value['level'],value['count'],value['price'],value['red']),(1,5,5000,True))
+        self.assertIsNotNone(value['minus'])
+
+    def test_conflicting_red_masks_reject_price(self):
+        import cv2
+        from coc_bot.progression.bulk_walls import payment
+        frame=cv2.imread(str(Path(__file__).parent/'fixtures/resource_visits/wall-starter-red-five.png'))
+        with patch('coc_bot.progression.reader.balance_amount',return_value=None),\
+             patch('coc_bot.upgrades.digits.read_digits',side_effect=['5000','6000']):
+            self.assertIsNone(payment(frame,(976,870)))
+        with patch('coc_bot.progression.reader.balance_amount',return_value=None),\
+             patch('coc_bot.upgrades.digits.read_digits',side_effect=['5000','5000','6000']):
+            self.assertIsNone(payment(frame,(976,870)))
+
     @unittest.skipUnless(shutil.which('tesseract'),'Native wall heading OCR is required')
     def test_starter_bulk_price_is_not_contaminated_by_the_tiles_bright_border(self):
         import cv2
@@ -329,6 +374,19 @@ class HomeChecklistTests(unittest.TestCase):
             self.assertTrue(bot._maybe_run_upgrades())
         self.assertEqual([c.args[0] for c in factory.return_value.run.call_args_list],
                          ['buildings','research','pets'])
+
+    def test_unresolved_payment_stops_instead_of_cycling_all_upgrade_categories(self):
+        from coc_bot.runtime.verification import ActionNeedsReview
+        bot=self.bot()
+        pending={'kind':'wall','remaining_before':None,'cost':5000}
+        with patch('coc_bot.upgrades.runner.UpgradeRunner') as factory:
+            factory.return_value.state.return_value={'pending':pending}
+            factory.return_value.run.return_value={'status':'needs_review','message':'Wall before count is missing'}
+            with self.assertRaisesRegex(ActionNeedsReview,'Wall before count is missing'):
+                bot._maybe_run_upgrades()
+        self.assertEqual(factory.return_value.run.call_count,1)
+        self.assertEqual(factory.return_value.state()['pending'],pending)
+        bot.nav_input.tap.assert_not_called()
 
     def test_donation_preserves_builder_check_as_unfinished(self):
         bot=self.bot();bot._has_donate_request.side_effect=[False,True]

@@ -8,6 +8,27 @@ from coc_bot.attack.farmer import FarmResult
 
 
 class BetweenAttackChatTests(unittest.TestCase):
+    def test_unresolved_payment_exits_without_generic_navigation_or_retries(self):
+        from coc_bot.config import load_config
+        from coc_bot.runtime.verification import ActionNeedsReview
+        with tempfile.TemporaryDirectory() as root:
+            bot=DonationBot.__new__(DonationBot);bot.config=load_config();bot.config.data_dir=Path(root)
+            bot._stop_requested=False;bot.should_stop=lambda:False;bot._state='scan_chat'
+            bot.client=Mock();bot.tracker=Mock();bot.navigator=Mock();bot.farmer=Mock()
+            bot.navigator.ensure_clan_chat.return_value=True;bot.game_state=Mock()
+            bot.set_mode=Mock();bot._set_state=Mock();bot._has_donate_request=Mock()
+            bot._settings_stop_ready=lambda:False;bot._recover=Mock()
+            bot._fleet_should_yield=lambda:False
+            bot._loop_tick=Mock(side_effect=ActionNeedsReview('Unresolved wall payment'))
+            with patch('coc_bot.attack.recovery.recover_attack'),\
+                 patch('coc_bot.attack.recovery.pending',return_value=None),\
+                 patch('coc_bot.builder_base.runner.pending',return_value=False),\
+                 patch('coc_bot.runtime.screenshot_retention.prune_attack_diagnostics'),\
+                 self.assertRaisesRegex(ActionNeedsReview,'Unresolved wall payment'):
+                bot._run_inner()
+            bot._recover.assert_not_called();bot._loop_tick.assert_called_once()
+            bot.tracker.pause.assert_called_once()
+
     def test_fleet_checkpoint_verification_failure_uses_normal_loop_recovery(self):
         from coc_bot.config import load_config
         with tempfile.TemporaryDirectory() as root:

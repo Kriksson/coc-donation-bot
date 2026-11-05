@@ -10,6 +10,10 @@ from coc_bot.upgrades.runner import write_json
 LIMIT = 100
 
 
+class ActionNeedsReview(RuntimeError):
+    """Stop the device owner when an unresolved payment cannot be reconciled."""
+
+
 def save_frame(config, name, frame):
     """Overwrite one diagnostic frame before navigation hides a failed check."""
     import cv2

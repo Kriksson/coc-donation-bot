@@ -102,6 +102,12 @@ class WallUpgrade:
         counts=[queue_count(r.reader.rows(f),row,target) if r.reader.menu_kind(f)=='buildings' else None
                 for f in (first_frame,second_frame)]
         remaining=counts[0] if counts[0]==counts[1] else None
+        # Every payment needs a recoverable before observation. A direct
+        # level read may disappear when an instant upgrade deselects the wall.
+        if type(remaining) is not int or remaining<1:
+            from coc_bot.runtime.verification import save_frame
+            save_frame(r.config,'wall-queue-before',second_frame)
+            return {'status':'blocked','message':'Wall queue count/target level is unverified; nothing spent'}
         from coc_bot.progression.bulk_walls import control,BulkWalls
         if type(remaining) is int and control(second_frame,'upgrade_more') is not None:
             return BulkWalls(r).run(row,first,remaining,before)

@@ -89,6 +89,21 @@ def payment(frame, button, stop=None):
     hsv=cv2.cvtColor(price_image,cv2.COLOR_BGR2HSV)
     red=(cv2.inRange(hsv,(0,100,140),(12,255,255)) | cv2.inRange(hsv,(170,100,140),(180,255,255)))
     red_value=None
+    # The starter tile's antialiasing joins one zero at saturation 100.
+    # Two stricter masks must independently read the complete red price.
+    from coc_bot.upgrades.digits import read_digits
+    from coc_bot.progression.reader import red_digit_variants
+    red_readings=[]
+    for saturation in (110,115):
+        mask=(cv2.inRange(hsv,(0,saturation,140),(12,255,255)) |
+              cv2.inRange(hsv,(170,saturation,140),(180,255,255)))
+        digits=read_digits(cv2.cvtColor(mask,cv2.COLOR_GRAY2BGR),extra_templates=red_digit_variants())
+        if digits and digits.isdigit():red_readings.append(int(digits))
+    if len(set(red_readings))>1:return None
+    if len(red_readings)==2:
+        red_value=red_readings[0]
+        if price is not None and price!=red_value:return None
+        price=red_value
     if price is None:
         from coc_bot.upgrades.digits import read_digits
         from coc_bot.progression.reader import red_digit_variants
@@ -107,6 +122,7 @@ def payment(frame, button, stop=None):
     from coc_bot.upgrades.digits import read_digits
     from coc_bot.progression.reader import red_digit_variants
     red_price=read_digits(cv2.cvtColor(red,cv2.COLOR_GRAY2BGR),extra_templates=red_digit_variants())
+    if red_price and red_price.isdigit() and int(red_price)!=price:return None
     unaffordable_color=bool(red_value==price or red_price and red_price.isdigit() and int(red_price)==price)
     return {'price':price,'red':unaffordable_color,'pay':button,'currency':resource}
 
@@ -118,7 +134,8 @@ class BulkWalls:
         previous=None
         for _ in range(4):
             if self.r.stopped():return None
-            current=selection(self.r.capture.screenshot(),resource,self.r.stop)
+            self.last_frame=self.r.capture.screenshot()
+            current=selection(self.last_frame,resource,self.r.stop)
             if current is not None and current==previous:return current
             previous=current
             if self.r.wait(.15):return None
@@ -151,6 +168,8 @@ class BulkWalls:
             value=self.settled(resource)
             if (value is None or value['level']!=first['level'] or value['count']!=before['count']+1
                 or value['price']!=unit_cost*value['count']):
+                from coc_bot.runtime.verification import save_frame
+                save_frame(r.config,'bulk-wall-selection',getattr(self,'last_frame',None))
                 return {'status':'blocked','message':'Bulk wall count/price did not increase by one; nothing spent'}
             if value['red'] or value['price']>balance-reserve:break
         if value['red'] or value['price']>balance-reserve:

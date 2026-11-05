@@ -124,10 +124,19 @@ class Construction:
                 frame = r.capture.screenshot()
         observed = self.controls(frame)
         if observed and not r.stopped():
-            if observed['confirm'] and self.controls(r.capture.screenshot())==observed:
+            fresh=self.controls(r.capture.screenshot())
+            if fresh!=observed:
+                raise ValueError('Placement changed before cancellation; obstacle search blocked')
+            if observed['confirm']:
                 return observed
+            if r.stopped():return None
             r.input.tap(*observed['cancel'],jitter=0)
-            r.wait()
+            if r.wait():return None
+            after=r.capture.screenshot()
+            if self.controls(after) is not None:
+                from coc_bot.runtime.verification import save_frame
+                save_frame(r.config,'construction-cancel',after)
+                raise ValueError('Placement cancellation was not verified; obstacle search blocked')
         return None
 
     def start(self, row, before):

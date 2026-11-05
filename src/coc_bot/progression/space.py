@@ -180,6 +180,8 @@ class SpaceMaker:
             result=self.selected()
             if result['status']!='not_obstacle':return result
         if not r.stopped():
-            r.input.tap(round(frame.shape[1]*.5),round(frame.shape[0]*.28),jitter=0)
-            r.wait(.3)
+            # A guessed map tap can select another building or open a popup.
+            # Leave navigation to the runner's verified menu/chat cleanup.
+            from coc_bot.runtime.verification import save_frame
+            save_frame(r.config,'construction-no-room',r.capture.screenshot())
         return {'status':'no_room','message':'No verified ordinary obstacle could safely create room; placement remains paused'}

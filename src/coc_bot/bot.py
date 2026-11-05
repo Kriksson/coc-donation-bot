@@ -21,6 +21,7 @@ from coc_bot.donation.navigator import Navigator
 from coc_bot.donation.request_parser import RequestKind
 from coc_bot.runtime.game_state import GameState, GameStateMachine
 from coc_bot.runtime.tracker import RuntimeTracker
+from coc_bot.runtime.verification import ActionNeedsReview
 from coc_bot.stop import interrupted_sleep
 from coc_bot.vision.matcher import TemplateMatcher
 from coc_bot.vision.screens import BotMode, ScreenClassifier, ScreenType, MODE_LABELS
@@ -320,6 +321,10 @@ class DonationBot:
                         self.client.ensure_connected()
                     except AdbStopped:
                         break
+                except ActionNeedsReview:
+                    # Preserve the receipt and surface the error to the web
+                    # controller. Repeated recovery/navigation is not progress.
+                    raise
                 except Exception as exc:
                     if self._stop_requested:
                         break
@@ -371,7 +376,7 @@ class DonationBot:
             and not read(self.config.data_dir/'layouts/state.json',{}).get('pending')
             and not read(self.config.data_dir/'layouts/state.json',{}).get('last_survey',{}).get('payment')):
             if self._state in ('scan_chat','scroll_chat'):
-                self._do_scan_chat()
+                self._chat_tick(scan_only=True)
                 # Continue existing donation states before maintenance work.
                 self._visit_chat_pending=self._state in ('open_donation','donate')
             elif self._state=='open_donation':self._do_open_donation()
@@ -439,10 +444,15 @@ class DonationBot:
             interrupted_sleep(2, self.should_stop)
             return
 
-        if self._state == "scan_chat":
-            self._do_scan_chat()
+        self._chat_tick()
+
+    def _chat_tick(self, *, scan_only=False):
+        started=time.monotonic()
+        verified=False
+        if scan_only or self._state == "scan_chat":
+            verified=self._do_scan_chat() is True
         elif self._state == "scroll_chat":
-            self._do_scroll_chat()
+            verified=self._do_scroll_chat() is True
         elif self._state == "open_donation":
             self._do_open_donation()
         elif self._state == "donate":
@@ -456,6 +466,8 @@ class DonationBot:
         self.tracker.tick()
         lo, hi = self.config.scan_interval_ms
         interrupted_sleep(random.uniform(lo, hi) / 1000.0, self.should_stop)
+        if verified and not self.should_stop():
+            getattr(self,'_fleet_chat_seconds',lambda _:None)(time.monotonic()-started)
 
     def _layout_runner(self):
         from types import SimpleNamespace
@@ -603,6 +615,9 @@ class DonationBot:
                 maintenance.setdefault('categories',{})[kind]={
                     'at':time.time(),'status':result.get('status'),'message':result.get('message'),
                     'availability':result.get('availability')}
+                if result.get('status')=='needs_review' and runner.state().get('pending'):
+                    write(maintenance_path,maintenance|{'checked_at':time.time(),'remaining':queue})
+                    raise ActionNeedsReview('Unresolved upgrade payment: '+result.get('message','manual verification required'))
                 if result.get('status') in ('needs_review','stopped','blocked','changed','no_room'):
                     if not result.get('retry_other_candidates'):
                         self._visit_retry_at=time.time()+300
@@ -888,20 +903,20 @@ class DonationBot:
             logger.warning("Could not reopen clan chat")
         return ok
 
-    def _do_scan_chat(self) -> None:
+    def _do_scan_chat(self) -> bool:
         frame = self.capture.screenshot()
         self._maybe_save_debug(frame, "scan")
 
         if not self._ensure_chat_open(frame):
             self._set_state("scan_chat")
-            return
+            return False
 
         # Re-capture after a possible reopen so Donate search uses a fresh frame.
         frame = self.capture.screenshot()
         request = self.chat_monitor.find_donate_request(frame)
         if request is None:
             self._set_state("scroll_chat")
-            return
+            return True
 
         if not self._should_handle_request(request):
             logger.info(
@@ -909,16 +924,17 @@ class DonationBot:
                 request.kind.value,
             )
             self.chat_monitor.mark_handled(request)
-            return
+            return True
 
         self._pending_request = request
         self._set_state("open_donation")
+        return True
 
-    def _do_scroll_chat(self) -> None:
+    def _do_scroll_chat(self) -> bool:
         frame = self.capture.screenshot()
         if not self._ensure_chat_open(frame):
             self._set_state("scan_chat")
-            return
+            return False
 
         frame = self.capture.screenshot()
         request = self.chat_monitor.find_donate_request(frame)
@@ -932,9 +948,10 @@ class DonationBot:
             else:
                 self._pending_request = request
                 self._set_state("open_donation")
-            return
+            return True
         self.navigator.seek_donation_requests_step(frame, self._has_donate_request)
         self._set_state("scan_chat")
+        return True
 
     def _do_open_donation(self) -> None:
         if not hasattr(self, "_pending_request"):

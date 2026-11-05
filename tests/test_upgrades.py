@@ -413,10 +413,12 @@ class UpgradeSchedulingTests(unittest.TestCase):
                              ['buildings','research','pets','buildings','buildings'])
 
     def test_uncertain_upgrade_stops_remaining_categories(self):
+        from coc_bot.runtime.verification import ActionNeedsReview
         bot=self.make_bot();bot.config.upgrade_buildings_enabled=True
         with patch('coc_bot.upgrades.runner.UpgradeRunner') as runner:
             runner.return_value.run.return_value={'status':'needs_review'}
-            bot._maybe_run_upgrades()
+            runner.return_value.state.return_value={'pending':{'kind':'buildings','phase':'confirming'}}
+            with self.assertRaises(ActionNeedsReview):bot._maybe_run_upgrades()
             runner.return_value.run.assert_called_once_with('buildings',execute=True)
 
     def make_bot(self):

@@ -63,8 +63,13 @@ class UpgradeRunner:
                 self.input.tap(round(frame.shape[1]*.984),round(frame.shape[0]*.032),jitter=0)
                 if self.wait(): return
             else:
-                break
-        self.nav.ensure_clan_chat()
+                point=self.reader.detail_close(frame)
+                if point is None or self.state().get('pending'):break
+                if self.stopped():return
+                self.input.tap(*point,jitter=0)
+                if self.wait():return
+        if not self.nav.ensure_clan_chat() and not self.stopped():
+            raise ValueError('Home navigation was not verified after closing upgrades')
 
     def open_menu(self, kind):
         frame=self.capture.screenshot()
