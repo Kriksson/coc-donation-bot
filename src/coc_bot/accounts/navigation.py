@@ -33,6 +33,10 @@ def find(frame, name, bounds=(0, 0, 1, 1)):
     if template is None or region.shape[0] < template.shape[0] or region.shape[1] < template.shape[1]:
         return None
     _, score, _, point = cv2.minMaxLoc(cv2.matchTemplate(region, template, cv2.TM_CCOEFF_NORMED))
+    if score < .90 and name in ('switch_heading','switch_close'):
+        # Supercell ID can render its drawer at a smaller scale than the village.
+        template=cv2.resize(template,None,fx=.85,fy=.85,interpolation=cv2.INTER_AREA)
+        _, score, _, point=cv2.minMaxLoc(cv2.matchTemplate(region,template,cv2.TM_CCOEFF_NORMED))
     if score < .90:
         alternate = {'my_profile': 'my_profile_inactive', 'settings_tab': 'settings_tab_active'}.get(name)
         if alternate:
@@ -193,23 +197,25 @@ def picker_rows(frame, stop=None, *, include_game_name=True):
     canvas = cv2.resize(frame, (1853, 1048))
     # White account cards below the chooser heading. Login has no town-hall line.
     gray = cv2.cvtColor(canvas, cv2.COLOR_BGR2GRAY)
-    mask = cv2.inRange(gray[490:1040, 1340:1833], 248, 255)
+    mask = cv2.inRange(gray[490:1040, 1340:], 248, 255)
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     result = []
     for contour in contours:
         x, y, w, h = cv2.boundingRect(contour)
-        if w < 440 or not 75 < h < 150:
+        if not 400 <= w <= 505 or not 75 < h < 150 or not 4.3 <= w/h <= 4.9:
             continue
         top = y+490
-        detail = text(canvas[top+65:top+94, 1445:1770], stop=stop)
+        left = x+1340
+        card = cv2.resize(canvas[top:top+h,left:left+w],(487,106))
+        detail = text(card[65:94,102:427], stop=stop)
         if 'town hall' not in detail.lower():
             continue
-        name = text(canvas[top+17:top+46, 1445:1745], stop=stop).strip()
-        game_name = text(canvas[top+45:top+68, 1480:1770], stop=stop).strip() if include_game_name else ''
+        name = text(card[17:46,102:402], stop=stop).strip()
+        game_name = text(card[45:68,137:427], stop=stop).strip() if include_game_name else ''
         if name and len(name) <= 60:
             hall = re.fullmatch(r'town hall\s*:\s*(\d{1,2})', detail.strip(), re.IGNORECASE)
             result.append({'name': name, 'game_name': game_name,
-                           'hall': int(hall[1]) if hall else None, 'point': (round(1570*frame.shape[1]/1853),
+                           'hall': int(hall[1]) if hall else None, 'point': (round((left+w*.47)*frame.shape[1]/1853),
                                                    round((top+h/2)*frame.shape[0]/1048))})
     return sorted(result, key=lambda r: r['point'][1])
 
@@ -512,7 +518,7 @@ class AccountNavigator:
         cache=self.__dict__.setdefault('_picker_cache',OrderedDict())
         summary=self.__dict__.get('_names_only',False)
         canvas=cv2.resize(frame,(1853,1048))
-        key=(frame.shape,summary,hashlib.sha256(canvas[490:1040,1340:1833].tobytes()).digest())
+        key=(frame.shape,summary,hashlib.sha256(canvas[490:1040,1340:].tobytes()).digest())
         if key in cache:
             cache.move_to_end(key)
             if 'metrics' in self.__dict__:self.metrics['chooser_cache_hits']+=1

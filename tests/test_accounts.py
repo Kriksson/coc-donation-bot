@@ -298,6 +298,24 @@ class AccountsTests(TestCase):
                    return_value=SimpleNamespace(stdout='',returncode=0)):
             self.assertEqual(read_tag(frame,(0,0,1,1)),'#G9C0289PJ')
 
+    def test_saved_card_navigation_tracks_the_drawer_scale(self):
+        import numpy as np
+        from coc_bot.accounts.navigation import anchor, picker_rows
+        for scale,left,top in [(1.,1343,518),(.85,1422,493)]:
+            with self.subTest(scale=scale):
+                frame=np.zeros((1048,1853,3),np.uint8)
+                heading=cv2.resize(anchor('switch_heading'),None,fx=scale,fy=scale,
+                                   interpolation=cv2.INTER_AREA)
+                h,w=heading.shape[:2]
+                frame[408:408+h,1550:1550+w]=heading
+                w,h=round(487*scale),round(106*scale)
+                frame[top:top+h,left:left+w]=255
+                with patch('coc_bot.accounts.navigation.text',side_effect=['Town Hall: 18','Example']):
+                    cards=picker_rows(frame,include_game_name=False)
+                self.assertEqual([(r['name'],r['hall']) for r in cards],[('Example',18)])
+                x,y=cards[0]['point']
+                self.assertTrue(left < x < left+w and top < y < top+h)
+
     def test_inserted_spaces_in_chooser_names_do_not_lose_scroll_overlap(self):
         from coc_bot.accounts.navigation import AccountNavigator
         self.assertEqual(AccountNavigator.card_key({'name':'Example123'}),
