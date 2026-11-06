@@ -125,42 +125,37 @@ def stalled_season_bank_visible(frame):
     return True
 
 
-def hammer_jam_close_button(frame):
-    """Close the inspected free announcement, never its Watch action."""
+def _announcement_close(frame, anchors):
     if not isinstance(frame,np.ndarray) or not 1.6<frame.shape[1]/frame.shape[0]<1.95:return None
     image=cv2.resize(frame,(1853,1048));point=None
-    for name,box in [('hammer_jam_title',(480,645,1380,760)),
-                     ('hammer_jam_message',(415,740,1440,855)),
-                     ('hammer_jam_close',(1520,50,1650,175))]:
+    for name,box in anchors:
         ref=_reference(name)
         if ref is None:return None
         x0,y0,x1,y1=box;region=image[y0:y1,x0:x1]
         _,score,_,(x,y)=cv2.minMaxLoc(cv2.matchTemplate(region,ref,cv2.TM_CCOEFF_NORMED))
         observed=region[y:y+ref.shape[0],x:x+ref.shape[1]]
         if score<.97 or observed.mean()<ref.mean()*.90:return None
-        if name=='hammer_jam_close':
+        if name.endswith('_close'):
             point=(round((x0+x+ref.shape[1]/2)*frame.shape[1]/1853),
                    round((y0+y+ref.shape[0]/2)*frame.shape[0]/1048))
     return point
+
+
+def hammer_jam_close_button(frame):
+    """Close the inspected free announcement, never its Watch action."""
+    return _announcement_close(frame, [('hammer_jam_title',(480,645,1380,760)),
+                                      ('hammer_jam_message',(415,740,1440,855)),
+                                      ('hammer_jam_close',(1520,50,1650,175))])
 
 
 def gold_pass_offer_close_button(frame):
     """Dismiss the native pass advertisement, never its purchase action."""
-    if not isinstance(frame,np.ndarray) or not 1.6<frame.shape[1]/frame.shape[0]<1.95:return None
-    image=cv2.resize(frame,(1853,1048));point=None
-    for name,box in [('gold_pass_offer_heading',(730,610,1150,710)),
-                     ('gold_pass_offer_message',(700,680,1170,755)),
-                     ('gold_pass_offer_close',(1565,65,1680,175))]:
-        ref=_reference(name)
-        if ref is None:return None
-        x0,y0,x1,y1=box;region=image[y0:y1,x0:x1]
-        _,score,_,(x,y)=cv2.minMaxLoc(cv2.matchTemplate(region,ref,cv2.TM_CCOEFF_NORMED))
-        observed=region[y:y+ref.shape[0],x:x+ref.shape[1]]
-        if score<.97 or observed.mean()<ref.mean()*.90:return None
-        if name=='gold_pass_offer_close':
-            point=(round((x0+x+ref.shape[1]/2)*frame.shape[1]/1853),
-                   round((y0+y+ref.shape[0]/2)*frame.shape[0]/1048))
-    return point
+    return (_announcement_close(frame, [('gold_pass_offer_heading',(730,610,1150,710)),
+                                        ('gold_pass_offer_message',(700,680,1170,755)),
+                                        ('gold_pass_offer_close',(1565,65,1680,175))])
+            or _announcement_close(frame, [('gold_pass_discount_title',(600,645,1250,760)),
+                                          ('gold_pass_discount_message',(390,740,1440,825)),
+                                          ('hammer_jam_close',(1520,50,1650,175))]))
 
 
 def event_ended_button(frame):

@@ -35,3 +35,14 @@ class GoldPassOfferTests(TestCase):
         self.assertFalse(recover_home_announcement(nav,frame));nav.input.tap.assert_not_called()
         nav._stopping=lambda:True
         self.assertFalse(recover_home_announcement(nav,frame));nav.input.tap.assert_not_called()
+
+    def test_discount_offer_closes_only_after_matching_text_and_bright_x(self):
+        import numpy as np
+        frame=np.zeros((1048,1853,3),np.uint8)
+        frame[54:983,197:1658]=cv2.imread(str(ROOT/'gold-pass-discount.jpg'))
+        self.assertEqual(gold_pass_offer_close_button(frame),(1594,114))
+        for ys,xs in [(slice(645,760),slice(600,1250)),(slice(740,825),slice(390,1440)),
+                      (slice(50,175),slice(1520,1650))]:
+            covered=frame.copy();covered[ys,xs]=0
+            self.assertIsNone(gold_pass_offer_close_button(covered))
+        self.assertIsNone(gold_pass_offer_close_button((frame*.4).astype('uint8')))
