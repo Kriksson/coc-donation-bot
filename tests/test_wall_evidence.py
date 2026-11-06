@@ -97,6 +97,15 @@ class WallEvidenceTests(unittest.TestCase):
             self.assertEqual(json.loads(readings)['remaining'], 222)
             self.assertEqual(json.loads(readings)['balance'], 739)
 
+    def test_late_wall_balance_is_verified_without_repeating_payment(self):
+        with patch('coc_bot.progression.bulk_walls.control', return_value=None), \
+             patch('coc_bot.progression.walls.wall_panel', side_effect=[
+                 self.panel, self.panel, self.panel, None, self.panel | {'level': 4}]), \
+             patch('coc_bot.progression.walls.wall_balance', side_effect=[15739,15739,None,10739]):
+            self.assertEqual(WallUpgrade(self.r).run(self.row)['status'],'started')
+        self.assertEqual(self.taps(), [(1,1),(2,2)])
+        self.assertEqual(self.state()['last_completed']['level_after'],4)
+
     def test_partial_before_failure_rolls_back_and_never_pays(self):
         original = evidence.insert_observation
         def fail_second(db, ident, stage, frame, readings):

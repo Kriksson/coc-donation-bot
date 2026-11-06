@@ -152,10 +152,14 @@ class AdbClient:
             if state == "device":
                 return
             logger.warning("ADB device state '{}', reconnect attempt {}/{}", state, attempt, self.max_attempts)
-            self.connect()
+            # connect() verifies this device with get-state. In particular a
+            # successful final attempt must not fall through to the exception.
+            if self.connect():
+                return
             if interrupted_sleep(self.backoff_seconds * attempt, self.stop_check):
                 raise AdbStopped("Stop requested during ADB reconnect")
-        raise AdbError(f"Unable to connect to ADB device {self.device}")
+        if self.get_state() != "device":
+            raise AdbError(f"Unable to connect to ADB device {self.device}")
 
     def wm_size(self) -> tuple[int, int] | None:
         """

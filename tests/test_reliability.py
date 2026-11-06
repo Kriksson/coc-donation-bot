@@ -28,6 +28,13 @@ from coc_bot.vision.screens import ScreenType
 
 
 class ReliabilityTests(unittest.TestCase):
+    def test_last_reconnect_accepts_a_verified_device(self):
+        client = AdbClient("test-device", max_attempts=1, backoff_seconds=0)
+        for connected, states in ((True, ["offline"]), (False, ["offline", "device"])):
+            with self.subTest(connected=connected), patch.object(client, "connect", return_value=connected), \
+                    patch.object(client, "get_state", side_effect=states):
+                client.ensure_connected()
+
     def test_restore_rolls_back_yaml_and_images_at_each_install_failure(self):
         for failure in ("new_templates", "new.yaml", "templates"):
             with self.subTest(failure=failure), tempfile.TemporaryDirectory() as tmp:

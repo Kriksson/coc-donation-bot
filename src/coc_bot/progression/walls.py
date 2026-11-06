@@ -157,6 +157,15 @@ class WallUpgrade:
         after=wall_panel(frame,r.stop)
         balance=wall_balance(frame,r.reader,row['currency'],r.stop)
         wall_evidence.observe(r,pending,'after_panel',frame,level=after and after['level'],balance=balance)
+        # The village can paint the old balance while an instant upgrade
+        # settles. Re-read the screen only; never repeat either payment tap.
+        for _ in range(2):
+            if balance not in (None,before):break
+            if r.stopped() or r.wait(.5):return {'status':'stopped'}
+            frame=r.capture.screenshot()
+            after=wall_panel(frame,r.stop)
+            balance=wall_balance(frame,r.reader,row['currency'],r.stop)
+            wall_evidence.observe(r,pending,'after_panel',frame,level=after and after['level'],balance=balance)
         confirmed=after is not None and after['level']==target and balance==before-row['cost']
         if not confirmed and type(remaining) is int and remaining>=1 and balance==before-row['cost']:
             # Instant upgrades deselect the wall. In that layout, independently

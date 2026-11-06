@@ -290,6 +290,14 @@ class AccountsTests(TestCase):
                    return_value=SimpleNamespace(stdout='',returncode=0)):
             self.assertEqual(read_tag(frame,(0,0,1,1)),'#R2CLRG2VJ')
 
+    def test_profile_with_two_different_nine_glyphs(self):
+        from coc_bot.accounts.navigation import read_tag
+        from types import SimpleNamespace
+        frame=cv2.imread(str(Path(__file__).parent/'fixtures/accounts/tag-newera-white.png'))
+        with patch('coc_bot.runtime.processes.run_process',
+                   return_value=SimpleNamespace(stdout='',returncode=0)):
+            self.assertEqual(read_tag(frame,(0,0,1,1)),'#G9C0289PJ')
+
     def test_inserted_spaces_in_chooser_names_do_not_lose_scroll_overlap(self):
         from coc_bot.accounts.navigation import AccountNavigator
         self.assertEqual(AccountNavigator.card_key({'name':'Example123'}),
