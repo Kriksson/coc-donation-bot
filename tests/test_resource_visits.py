@@ -176,6 +176,23 @@ class GoalFleetTests(ClanRoutingTests):
                 finally:path.unlink()
         self.assertFalse(getattr(fleet,'_visit_suspended',False))
 
+    def test_due_account_wins_after_long_donor_work_and_a_persistent_chat_request(self):
+        fleet=self.fleet(self.same)
+        now=[1350];fleet.clock=lambda:now[0]
+        fleet.current._has_donate_request.return_value=True
+        self.assertFalse(fleet._checkpoint(self.same,0))
+        now[0]+=29
+        self.assertFalse(fleet._checkpoint(self.same,0))
+        now[0]+=1
+        with patch('coc_bot.attack.recovery.pending',return_value=True):
+            self.assertFalse(fleet._checkpoint(self.same,0))
+        self.assertTrue(fleet._checkpoint(self.same,0))
+        self.assertEqual(fleet._next,self.source['id'])
+        with patch('coc_bot.accounts.clan.donors_for',return_value=[self.same]), \
+             patch('coc_bot.donation.chat_check.peek_requests',return_value=object()):
+            self.assertTrue(fleet._check_chat_before_switch(self.same))
+        self.assertEqual(fleet._next,self.source['id'])
+
     def test_between_step_request_saves_interrupted_account_as_resume(self):
         fleet=self.fleet(self.source);fleet._chat_due=True
         fleet.current.chat_monitor.find_donate_request.return_value=SimpleNamespace(signature='new-request')

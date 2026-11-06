@@ -116,6 +116,7 @@ class AccountFleet:
         self.finish_action=False
         self.activity='Preparing account rotation'
         self._next=None
+        self._last_request_until=None
         self._watch=DonorWatch(clock)
 
     def __getattr__(self,name):
@@ -198,17 +199,25 @@ class AccountFleet:
             write(self.rotation.path,state)
         if account['id']==state['primary_id']:
             visit=getattr(self.current,'_visit',None)
-            if not self._watch.ready(state.get('next_watch_seconds',state['watch_seconds'])):return False
+            window=state.get('next_watch_seconds',state['watch_seconds'])
+            # OCR, travel and donor maintenance cannot earn verified chat time.
+            # Keep that accounting for maintenance, but cap how long a due
+            # village can wait *at this donor visit's safe checkpoints*.
+            if now-started < 1.5*window and not self._watch.ready(window):return False
             target=self.rotation.next_account(now)
             if target is None:return False
-            # A fresh visible request earns a further chat pass before leaving.
-            if self.current._has_donate_request(self.current.capture.screenshot()):return False
+            # Give visible requests one grace period per handoff. Repeated
+            # sightings of the same unfillable request must not renew it.
+            if self._last_request_until is None or now < self._last_request_until:
+                if self.current._has_donate_request(self.current.capture.screenshot()):
+                    if self._last_request_until is None:self._last_request_until=now+30
+                    return False
             if visit and not visit.complete():
                 # A large refill can span many battles. At this receipt-free
                 # checkpoint, preserve its cursor and give due accounts a turn
                 # after the full donor window rather than starving their work.
                 self._visit_suspended=True
-                logger.info('Donor window complete — pausing unfinished checklist for a due account; work will resume on return')
+                logger.info('Donor visit yielding to {} — unfinished checklist will resume on return',target.get('nickname',target['id']))
             self._next=target['id']
             return True
         visit=getattr(self.current,'_visit',None)
@@ -248,6 +257,10 @@ class AccountFleet:
             logger.info('Clan chat check complete: no donation request found')
             return True
         if 'donating' in account['roles']:
+            if account['id']==state['primary_id'] and self._next not in (None,account['id']):
+                # The donor has already offered its final request pass. Keep
+                # the scheduled target even if the final chat peek finds more.
+                return True
             self.current._visit_chat_pending=True
             self._next=account['id'];return True
         # A request that cannot be filled must not create an endless detour.
@@ -290,6 +303,7 @@ class AccountFleet:
                             self.current.request_stop()
                             break
                         started=self.clock();self._next=None;self._clan_checked=False;self._chat_due=True;self._visit_suspended=False
+                        self._last_request_until=None
                         self._initialize_schedule(account)
                         self.current._fleet_should_yield=lambda:self._checkpoint(account,started)
                         visit=getattr(self.current,'_visit',None)
