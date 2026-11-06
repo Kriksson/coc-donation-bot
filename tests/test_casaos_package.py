@@ -1,5 +1,5 @@
 """No real Android or privileged host changes: package regression checks."""
-from contextlib import contextmanager
+from contextlib import contextmanager, ExitStack
 import importlib.util
 import io
 import json
@@ -7,11 +7,12 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 from types import SimpleNamespace
 import tempfile
 import threading
 from unittest import TestCase, skipIf
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 import zipfile
 
 from coc_bot.config import project_root
@@ -194,6 +195,40 @@ class PackageTests(TestCase):
             runtime.thread.join(3)
         self.assertFalse(runtime.snapshot()["ready"])
         self.assertEqual(runtime.snapshot()["error"], "No host helper")
+
+    def test_legacy_stopped_and_unknown_ip_startup_explain_host_requirement(self):
+        for status, body in [
+            (200, {"session": "STOPPED", "container": "STOPPED", "ip": None}),
+            (503, {"error": "Expected 4 octets in 'UNKNOWN'"}),
+        ]:
+            with self.subTest(body=body), patch("coc_bot.host_bridge.UnixConnection") as connection:
+                response = connection.return_value.getresponse.return_value
+                response.status = status
+                response.read.return_value = json.dumps(body).encode()
+                runtime = Platform()
+                runtime.prepare()
+                self.assertIn("administrator", runtime.snapshot()["error"])
+                self.assertFalse(runtime.snapshot()["ready"])
+                self.assertEqual(connection.return_value.request.call_args.args[:2], ("GET", "/v1/status"))
+                connection.return_value.request.assert_called_once()
+
+    def test_lease_protocol_preserves_live_endpoint_and_explains_old_helper_failures(self):
+        from coc_bot.host_bridge import acquire_lease
+        for recovery, code, error, expected in [
+            (False, 409, "Another bot is controlling Waydroid", "Another bot"),
+            (False, 503, "unsupported operand type(s) for +: 'NoneType' and 'str'", "administrator"),
+            (True, 404, "Unknown runtime action", "administrator"),
+        ]:
+            with self.subTest(code=code), patch("coc_bot.host_bridge.UnixConnection") as connection:
+                response = connection.return_value.getresponse.return_value
+                response.status = code
+                response.read.return_value = json.dumps({"error": error}).encode()
+                with self.assertRaisesRegex(RuntimeError, expected):
+                    acquire_lease("192.0.2.77:5555", recovery=recovery)
+                endpoint = "recovery-lease" if recovery else "lease"
+                connection.return_value.request.assert_called_once_with(
+                    "GET", "/v1/" + endpoint + "?device=192.0.2.77%3A5555")
+                connection.return_value.close.assert_called_once()
 
     def test_platform_reconnects_only_the_owned_transport_before_testing_connection(self):
         events, commands = [], []
@@ -446,6 +481,45 @@ class ManagedAdbIdentityTests(TestCase):
         self.assertTrue(self.host.adb_public_key(profile, 1000))
 
 
+class HostStatusTests(TestCase):
+    """Exercise status and address policy even where the Linux socket server cannot run."""
+    def setUp(self):
+        import socketserver
+        with ExitStack() as imports:
+            if os.name == "nt":
+                imports.enter_context(patch.dict(sys.modules, {"pwd": MagicMock(), "fcntl": MagicMock()}))
+                imports.enter_context(patch.object(socketserver, "UnixStreamServer", object, create=True))
+            host = module("host_agent")
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.metadata = Path(temp.name) / "device.json"
+        with patch.object(host.pwd, "getpwnam"):
+            self.runtime = host.Runtime({"user": "test", "socket": str(self.metadata.with_name("host.sock"))})
+
+    def test_only_confirmed_stop_can_use_verified_cached_ip_for_recovery(self):
+        self.runtime.command = MagicMock(return_value="Session: STOPPED\n")
+        for content in (None, "{", '{"ip": "UNKNOWN"}', '{"ip": 5}'):
+            if content is not None:
+                self.metadata.write_text(content)
+            with self.assertRaisesRegex(RuntimeError, "no verified device IP"):
+                self.runtime.lease_ip(recovery=True)
+        self.metadata.write_text('{"ip":"192.0.2.77"}')
+        self.assertEqual(self.runtime.lease_ip(recovery=True), "192.0.2.77")
+        with self.assertRaisesRegex(RuntimeError, "no verified device IP"):
+            self.runtime.lease_ip(recovery=False)
+        for report in ("", "Container: STOPPED", "Session: RUNNING\nContainer: FROZEN\nIP address: UNKNOWN"):
+            self.runtime.command.return_value = report
+            with self.assertRaisesRegex(RuntimeError, "no longer stopped"):
+                self.runtime.lease_ip(recovery=True)
+
+    def test_stale_running_session_without_ip_requires_positive_lxc_stop(self):
+        for lxc, session in [("STOPPED", "STOPPED"), ("RUNNING", "RUNNING"), ("", "RUNNING")]:
+            self.runtime.command = MagicMock(side_effect=[
+                "Session: RUNNING\nContainer: STOPPED\nIP address: UNKNOWN", "", lxc])
+            self.assertEqual(self.runtime.status()["session"], session)
+            self.assertFalse(self.metadata.exists())
+
+
 @skipIf(os.name == "nt", "Host helper requires Linux flock and Unix sockets")
 class HostBridgeTests(TestCase):
     def setUp(self):
@@ -501,6 +575,23 @@ class HostBridgeTests(TestCase):
         with self.assertRaises(RuntimeError):
             acquire_lease("127.0.0.1:5555")
 
+    def test_stopped_recovery_lease_conflicts_with_native_and_rejects_other_serials(self):
+        from coc_bot.host_bridge import request, acquire_lease
+        from coc_bot.runtime.device_lease import DeviceLease, DeviceBusy
+        device = "192.0.2.77:5555"
+        request("status")  # Host publishes last known IP.
+        self.runtime.command = lambda *args, **kwargs: "Session: STOPPED\n"
+        with self.assertRaisesRegex(RuntimeError, "no verified device IP"):
+            acquire_lease(device)
+        with self.assertRaisesRegex(RuntimeError, "does not match"):
+            acquire_lease("192.0.2.78:5555", recovery=True)
+        with DeviceLease(device, recovery=True):
+            with patch.dict(os.environ, {"COC_HOST_SOCKET": ""}), self.assertRaises(DeviceBusy):
+                with DeviceLease(device):
+                    self.fail("Both owners acquired the same serial")
+        with DeviceLease(device, recovery=True):
+            pass
+
     def test_adopted_runtime_can_start_a_closed_session_without_host_commands_from_client(self):
         state = {"running": False}
         commands = []
@@ -525,6 +616,8 @@ class HostBridgeTests(TestCase):
         def command(args, **kwargs):
             if args[0] == "lxc-attach":
                 raise subprocess.TimeoutExpired(args, 3)
+            if args[0] == "lxc-info":
+                return "STOPPED\n"
             return "Session: RUNNING\nContainer: STOPPED\nIP address: 192.0.2.77\n"
         self.runtime.command = command
         result = self.runtime.status()

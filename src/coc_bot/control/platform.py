@@ -74,14 +74,18 @@ class Platform:
                 raise RuntimeError("Android has not finished starting (package service unavailable). Use Retry.")
             self.cancel.wait(min(1, remaining))
 
-    def prepare(self, *, skip_updates=False):
+    def prepare(self, *, skip_updates=False, android_ensured=False):
         try:
-            from coc_bot.host_bridge import request, STARTUP_TIMEOUT_SECONDS
+            from coc_bot.host_bridge import request, startup_status, STARTUP_TIMEOUT_SECONDS
             from coc_bot.adb.client import AdbClient
             from coc_bot.config import load_config
             from coc_bot.runtime.device_lease import DeviceLease
             from coc_bot.adb.capture import ScreenCapture
-            request("ensure", timeout=STARTUP_TIMEOUT_SECONDS)
+            self.check_cancel()
+            if not android_ensured:
+                startup_status()
+                self.check_cancel()
+                request("ensure", timeout=STARTUP_TIMEOUT_SECONDS)
             self.check_cancel()
             config = load_config()
             client = AdbClient(config.adb_device)

@@ -1,6 +1,7 @@
 """Bounded managed-session recovery after repeated Android capture failures."""
 import json
 import math
+import subprocess
 import threading
 import time
 from contextvars import copy_context
@@ -67,7 +68,7 @@ class CaptureRecovery:
             client.run_shell('dumpsys SurfaceFlinger --list', timeout=5)
         except AdbError as exc:
             self.check_cancel()
-            if 'timed out' in str(exc).lower() or 'timeout' in str(exc).lower():
+            if isinstance(exc.__cause__, subprocess.TimeoutExpired):
                 return True
             raise
         raise RuntimeError('Capture failed but Android renderer responded; automatic restart blocked')
@@ -88,9 +89,76 @@ class CaptureRecovery:
             raise RuntimeError('Android recovery limit reached (two restarts per hour). Inspect the host.')
         write_json(path, {'attempts': [*recent, now]})
 
-    def _run(self, config, resume, options):
-        from coc_bot.runtime.device_lease import DeviceLease
+    def _check_receipts(self, config):
+        from coc_bot.accounts.startup import unresolved
+        from coc_bot.accounts.store import read
+        from coc_bot.config import load_config
+        if self.service.accounts:
+            store = self.service.accounts.store
+            store.require_ready()
+            with store.scope():
+                config = load_config()
+        if (unresolved(config) or read(config.data_dir / 'builder_base/upgrades.json', {}).get('pending')
+                or read(config.data_dir / 'reinforcements/state.json', {}).get('status')
+                in ('send_pending', 'send_unconfirmed')):
+            raise RuntimeError('Review the pending action before Android recovery')
+
+    def _probe_running(self, config, status):
         from coc_bot.host_bridge import request
+
+        def running_device(status):
+            return (status['session'] == 'RUNNING' and status['ip']
+                    and config.adb_device == str(status['ip']) + ':5555')
+
+        if not running_device(status):
+            raise RuntimeError('Waydroid device or session is uncertain; automatic restart blocked')
+        frozen = status['container'] == 'FROZEN'
+        if frozen:
+            self.check_cancel()
+            status = request('resume')
+        if not running_device(status) or status['container'] != 'RUNNING':
+            raise RuntimeError('Waydroid is not confirmed running; automatic restart blocked')
+        self.check_cancel()
+        restart = self._probe(config)
+        if restart and frozen:
+            raise RuntimeError('Capture is still unavailable after unfreezing Waydroid; retry startup')
+        return restart
+
+    def _ensure_capture_session(self, config, platform):
+        from coc_bot.runtime.device_lease import DeviceLease
+        from coc_bot.host_bridge import request, startup_status, HELPER_REFRESH_REQUIRED, STARTUP_TIMEOUT_SECONDS
+        initial = startup_status()
+        stopped = initial['session'] == initial['container'] == 'STOPPED'
+        with DeviceLease(config.adb_device, recovery=stopped):
+            self.check_cancel()
+            self._check_receipts(config)
+            status = startup_status()
+            if stopped != (status['session'] == status['container'] == 'STOPPED'):
+                raise RuntimeError('Waydroid session changed during capture recovery')
+            if stopped and status['ip'] and config.adb_device != str(status['ip']) + ':5555':
+                raise RuntimeError('Managed device changed during capture recovery')
+            if not stopped and not self._probe_running(config, status):
+                return False
+            self.check_cancel()
+            if status.get('recovery_lease') is not True:
+                raise RuntimeError(HELPER_REFRESH_REQUIRED)
+            if not stopped:
+                # Android may have gone idle while screencap and dumpsys timed
+                # out. Only stop a renderer that is still on the owned device.
+                latest = startup_status()
+                if (latest['session'], latest['container'], latest['ip']) != ('RUNNING', 'RUNNING', status['ip']):
+                    raise RuntimeError('Waydroid changed during the renderer probe; automatic restart blocked')
+            self._reserve_restart(config)
+            self.check_cancel()
+            if not stopped:
+                platform.update('recovering', 'Restarting stalled Waydroid renderer')
+                request('stop', timeout=60)
+                self.check_cancel()
+            platform.update('recovering', 'Starting managed Waydroid session')
+            request('ensure', timeout=STARTUP_TIMEOUT_SECONDS)
+        return True
+
+    def _run(self, config, resume, options):
         service, platform = self.service, self.service.platform
         try:
             logger.warning('Repeated capture failures — pausing inputs to check Android renderer')
@@ -101,20 +169,12 @@ class CaptureRecovery:
                 if time.monotonic() >= deadline:
                     raise RuntimeError('Bot did not release Android; automatic restart blocked')
             self.check_cancel()
-            with DeviceLease(config.adb_device):
-                restart = self._probe(config)
-                self.check_cancel()
-                if restart:
-                    self._reserve_restart(config)
-                    logger.warning('Android renderer is unresponsive — restarting managed Waydroid session')
-                    platform.update('recovering', 'Restarting frozen Waydroid session')
-                    # Keep other controllers out until Android stops. The host
-                    # stop endpoint does not acquire the device lock itself.
-                    request('stop', timeout=60)
-            if restart:
+            if self._ensure_capture_session(config, platform):
                 self.check_cancel()
                 platform.cancel = self.cancel
-                platform.prepare(skip_updates=True)
+                # Startup may publish a new IP. Reacquire its ordinary lease
+                # before disconnecting ADB, launching Clash or checking capture.
+                platform.prepare(skip_updates=True, android_ensured=True)
                 self.check_cancel()
                 if not platform.snapshot()['ready']:
                     raise RuntimeError(platform.snapshot()['error'] or 'Android recovery failed')
@@ -123,7 +183,7 @@ class CaptureRecovery:
             with service.lock:
                 self.check_cancel()
                 if resume and not service.controller.snapshot().closing:
-                    if not service.controller.start(options):
+                    if not service._start_bot(options):
                         raise RuntimeError('Android recovered, but the bot could not resume')
             logger.info('Android capture recovered{}', ' — bot resumed with checkpoint recovery' if resume else '')
         except Exception as exc:

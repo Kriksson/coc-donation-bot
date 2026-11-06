@@ -31,7 +31,7 @@ class ConstructionCleanupTests(unittest.TestCase):
         r=self.runner();calls=[0]
         def observed(_):
             calls[0]+=1
-            return {'cancel':(100 if calls[0]<=10 else 200,100),'confirm':None,'ghost':(120,120)}
+            return {'cancel':(100 if calls[0]<=2 else 200,100),'confirm':None,'ghost':(120,120)}
         r.construction_controls.side_effect=observed
         with self.assertRaisesRegex(ValueError,'changed before cancellation'):
             Construction(r).locate_space()
@@ -39,7 +39,7 @@ class ConstructionCleanupTests(unittest.TestCase):
 
     def test_cancelled_preview_can_return_to_normal_navigation(self):
         r=self.runner();value=r.construction_controls.return_value
-        r.construction_controls.side_effect=[value]*11+[None]
+        r.construction_controls.side_effect=[value]*3+[value,None]
         self.assertIsNone(Construction(r).locate_space())
         r.input.tap.assert_called_once_with(100,100,jitter=0)
 

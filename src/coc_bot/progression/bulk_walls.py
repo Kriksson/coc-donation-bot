@@ -141,7 +141,7 @@ class BulkWalls:
             if self.r.wait(.15):return None
         return None
 
-    def run(self, row, first, remaining, balance):
+    def run(self, row, first, remaining, balance, queue_frames):
         r=self.r;resource=row['currency'];unit_cost=row['cost']
         reserve=getattr(r.config,'upgrade_'+resource+'_reserve')
         maximum=maximum_affordable(balance,reserve,unit_cost,remaining)
@@ -194,18 +194,19 @@ class BulkWalls:
                               {resource:balance},availability)
         if blocked:return {'status':'blocked','message':blocked}
         state=r.state()
-        state['pending']={'kind':'wall','name':'Wall','cost':value['price'],'unit_cost':unit_cost,
+        receipt={'kind':'wall','name':'Wall','cost':value['price'],'unit_cost':unit_cost,
                           'count':maximum,'currency':resource,'level_before':first['level'],
                           'target_level':first['level']+1,'remaining_before':remaining,
                           'balance_before':balance,'phase':'confirming','at':time.time()}
-        from coc_bot.upgrades.runner import write_json
-        write_json(r.path,state)
+        from coc_bot.progression import wall_evidence
+        failure=wall_evidence.begin(r,state,receipt,queue_frames,fresh)
+        if failure:return failure
         if r.stopped():return {'status':'needs_review'}
         r.input.tap(*value['pay'],jitter=0)
         if r.wait(.8):return {'status':'needs_review'}
         # The dedicated Upgrade Walls confirmation is reconciled from the same
         # durable intent. Generic building confirmation must not authorize it.
-        result=WallUpgrade(r).recover(state)
+        result=WallUpgrade(r).recover(state,immediate=True)
         if result['status']=='recovered':
             return {'status':'started','count':maximum,'spent':value['price'],
                     'message':str(maximum)+' wall upgrades independently confirmed'}

@@ -211,6 +211,7 @@ class ProgressionPolicyTests(TestCase):
         frame=np.zeros((1048,1853,3),np.uint8)
         with tempfile.TemporaryDirectory() as folder:
             runner=Mock();runner.path=Path(folder)/'state.json';runner.stop=None
+            runner.config.account_tag='#HOME'
             runner.find_row.return_value=(row,frame);runner.reader.balances.return_value={'gold':2000}
             runner.reader.availability.return_value=(2,2);runner.eligibility.return_value=None
             runner.stopped.return_value=False;runner.wait.return_value=False;runner.state.return_value={}

@@ -8,6 +8,17 @@ from urllib.parse import urlencode
 
 # Includes the host's first-boot allowance and bounded service-start overhead.
 STARTUP_TIMEOUT_SECONDS = 900
+HELPER_REFRESH_REQUIRED = ("An administrator must refresh the CasaOS host helper for stopped-session "
+                           "recovery and startup with a missing Waydroid IP.")
+
+
+def _runtime_error(message):
+    # Older helpers parse the boot placeholder as IPv4, or concatenate the
+    # absent IP with ":5555" if the session stops during lease acquisition.
+    if ("octets" in message and "'UNKNOWN'" in message
+            or "unsupported operand type(s) for +" in message and "'NoneType'" in message):
+        return RuntimeError(HELPER_REFRESH_REQUIRED)
+    return RuntimeError(message)
 
 
 class UnixConnection(http.client.HTTPConnection):
@@ -29,20 +40,31 @@ def request(action, *, timeout=15):
         response = connection.getresponse()
         payload = json.loads(response.read(65536))
         if response.status != 200:
-            raise RuntimeError(payload.get("error", "Host runtime request failed"))
+            message = payload.get("error", "Host runtime request failed")
+            raise _runtime_error(message)
         return payload
     finally:
         connection.close()
 
 
-def acquire_lease(device):
+def startup_status():
+    status = request("status")
+    if status.get("recovery_lease") is not True and (status["session"] == "STOPPED" or not status["ip"]):
+        raise RuntimeError(HELPER_REFRESH_REQUIRED)
+    return status
+
+
+def acquire_lease(device, *, recovery=False):
     connection = UnixConnection(timeout=15)
     try:
-        connection.request("GET", "/v1/lease?" + urlencode({"device": device}))
+        endpoint = "/v1/recovery-lease" if recovery else "/v1/lease"
+        connection.request("GET", endpoint + "?" + urlencode({"device": device}))
         response = connection.getresponse()
         if response.status != 200:
+            if recovery and response.status == 404:
+                raise RuntimeError(HELPER_REFRESH_REQUIRED)
             message = json.loads(response.read(65536)).get("error", "Device busy")
-            raise RuntimeError(message)
+            raise _runtime_error(message)
         # The host retains flock until this connection closes. No command queue.
         return connection
     except BaseException:

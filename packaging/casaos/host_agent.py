@@ -105,7 +105,7 @@ class Runtime:
         return not present
 
     def status(self):
-        text = self.command(["waydroid", "status"], user=True, check=False)
+        text = self.command(["waydroid", "status"], user=True)
         values = {key.strip(): value.strip() for key, value in
                   (line.split(":", 1) for line in text.splitlines() if ":" in line)}
         ip = None
@@ -115,21 +115,22 @@ class Runtime:
             # A new session reports UNKNOWN until Android's network is ready.
             # Keep waiting; never publish a placeholder as an ADB address.
             pass
-        if ip:
-            # Some LXC/Waydroid combinations report STOPPED for a healthy payload.
-            # Confirm Android itself rather than restarting a reachable session.
-            if values.get("Container") == "STOPPED":
-                try:
-                    boot = self.android_booted(timeout=3)
-                except subprocess.TimeoutExpired:
-                    boot = False
-                if boot:
-                    values["Container"] = "RUNNING"
-                else:
-                    # Waydroid may retain RUNNING session metadata after its user
-                    # process exits. An unavailable stopped payload needs startup.
+        if values.get("Container") == "STOPPED" and (ip or values.get("Session") == "RUNNING"):
+            # Waydroid can misreport a healthy payload, or retain stale session
+            # metadata after exit. A timed-out getprop alone proves neither.
+            try:
+                boot = self.android_booted(timeout=3)
+            except subprocess.TimeoutExpired:
+                boot = False
+            if boot:
+                values["Container"] = "RUNNING"
+            elif values.get("Session") == "RUNNING":
+                state = self.command(["lxc-info", "-P", "/var/lib/waydroid/lxc", "-n", "waydroid",
+                                      "-sH"], check=False, timeout=3)
+                if state.strip() == "STOPPED":
                     values["Session"] = "STOPPED"
-                text = "\n".join(key + ":\t" + value for key, value in values.items()) + "\n"
+            text = "\n".join(key + ":\t" + value for key, value in values.items()) + "\n"
+        if ip:
             destination = Path(self.config["socket"]).with_name("device.json")
             # Unique temporary names: status requests may arrive concurrently.
             fd, name = tempfile.mkstemp(dir=destination.parent, prefix="device-")
@@ -137,9 +138,27 @@ class Runtime:
                 json.dump({"ip": ip}, file)
             os.chmod(name, 0o644)
             os.replace(name, destination)
-        return {"raw_status": text, "ip": ip,
-                "session": values.get("Session", "STOPPED"),
-                "container": values.get("Container", "STOPPED")}
+        return {"raw_status": text, "ip": ip, "recovery_lease": True,
+                "session": values.get("Session", "UNKNOWN"),
+                "container": values.get("Container", "STOPPED" if values.get("Session") == "STOPPED" else "UNKNOWN")}
+
+    def lease_ip(self, recovery):
+        status = self.status()
+        if recovery and not status["session"] == status["container"] == "STOPPED":
+            raise RuntimeError("Waydroid is no longer stopped; retry capture recovery")
+        if status["ip"]:
+            return status["ip"]
+        if recovery:
+            # Only capture recovery may lock the last host-published serial
+            # during an outage. It cannot use that address for ADB inputs.
+            path = Path(self.config["socket"]).with_name("device.json")
+            try:
+                cached = json.loads(path.read_text())["ip"]
+                if isinstance(cached, str):
+                    return str(ipaddress.IPv4Address(cached))
+            except (OSError, ValueError, KeyError, TypeError):
+                pass
+        raise RuntimeError("Waydroid has no verified device IP for this lease")
 
     def resume(self):
         status = self.status()
@@ -165,6 +184,8 @@ class Runtime:
             raise RuntimeError("Another runtime operation is finishing; retry shortly")
         try:
             status = self.status()
+            if status["session"] not in ("RUNNING", "STOPPED"):
+                raise RuntimeError("Waydroid session state is unknown; inspect the host before startup")
             adopted_start = False
             if self.config.get("manage_services", True):
                 self.command(["systemctl", "start", "waydroid-container.service"])
@@ -268,13 +289,13 @@ class Handler(BaseHTTPRequestHandler):
                 return self.respond(self.server.runtime.status())
             except Exception as exc:
                 return self.respond({"error": str(exc)}, 503)
-        if parsed.path != "/v1/lease":
+        if parsed.path not in ("/v1/lease", "/v1/recovery-lease"):
             return self.respond({"error": "Unknown runtime action"}, 404)
         arguments = parse_qs(parsed.query)
         serials = arguments.get("device", [])
         try:
-            status = self.server.runtime.status()
-            if set(arguments) != {"device"} or len(serials) != 1 or serials[0] != status["ip"] + ":5555":
+            ip = self.server.runtime.lease_ip(parsed.path == "/v1/recovery-lease")
+            if set(arguments) != {"device"} or len(serials) != 1 or serials[0] != ip + ":5555":
                 return self.respond({"error": "Device does not match managed Waydroid"}, 400)
             digest = hashlib.sha256(serials[0].encode()).hexdigest()
             path = Path(tempfile.gettempdir()) / ("coc-bot-device-" + digest + ".lock")

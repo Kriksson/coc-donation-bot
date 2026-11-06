@@ -297,8 +297,12 @@ class BulkWallTests(unittest.TestCase):
 
     def test_plus_to_red_minus_one_and_exact_batch_intent(self):
         from coc_bot.progression.bulk_walls import BulkWalls
+        import numpy as np
         with tempfile.TemporaryDirectory() as folder:
             r=Mock();r.path=Path(folder)/'state.json';r.stop=None
+            r.config.account_tag='#HOME'
+            frame=np.zeros((16,16,3),np.uint8)
+            r.capture.screenshot.return_value=frame
             r.config.upgrade_gold_reserve=0;r.stopped.return_value=False;r.wait.return_value=False
             r.state.return_value={};r.eligibility.return_value=None
             value=lambda n,red=False:{'level':1,'count':n,'price':n*1000,'red':red,
@@ -308,7 +312,7 @@ class BulkWallTests(unittest.TestCase):
                  patch('coc_bot.progression.bulk_walls.selection',return_value=value(2)),\
                  patch('coc_bot.progression.walls.wall_balance',return_value=2140),\
                  patch('coc_bot.progression.walls.WallUpgrade.recover',return_value={'status':'recovered'}):
-                result=batch.run({'currency':'gold','cost':1000},{'level':1},22,2140)
+                result=batch.run({'currency':'gold','cost':1000},{'level':1},22,2140,(frame,frame))
             self.assertEqual((result['count'],result['spent']),(2,2000))
             self.assertEqual([call.args for call in r.input.tap.call_args_list],
                              [(10,10),(20,20),(20,20),(30,30),(40,40)])
@@ -321,7 +325,7 @@ class BulkWallTests(unittest.TestCase):
         first={'level':1,'count':1,'price':1000,'red':False,'plus':(20,20),'minus':(30,30),'pay':(40,40)}
         batch=BulkWalls(r);batch.settled=Mock(side_effect=[first,first|{'count':3,'price':2000}])
         with patch('coc_bot.progression.bulk_walls.control',return_value=(10,10)):
-            result=batch.run({'currency':'gold','cost':1000},{'level':1},22,2140)
+            result=batch.run({'currency':'gold','cost':1000},{'level':1},22,2140,())
         self.assertEqual(result['status'],'blocked')
         r.state.assert_not_called()
         self.assertNotIn((40,40),[call.args for call in r.input.tap.call_args_list])

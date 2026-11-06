@@ -104,7 +104,10 @@ class Construction:
     def locate_space(self):
         r = self.runner
         frame = r.capture.screenshot()
-        for x,y in [(None,None),(.5,.55),(.43,.48),(.56,.48),(.36,.55),(.63,.55),(.5,.67),(.43,.63),(.57,.63)]:
+        positions = [(None, None)]
+        if not r.stopped() and r.config.progression_rearrange:
+            positions.extend([(.5,.55),(.43,.48),(.56,.48),(.36,.55),(.63,.55),(.5,.67),(.43,.63),(.57,.63)])
+        for x,y in positions:
             if r.stopped(): return None
             observed = self.controls(frame)
             if observed is None:
@@ -115,7 +118,7 @@ class Construction:
                 second = self.controls(r.capture.screenshot())
                 if second == observed:
                     return observed
-            if x is not None and r.config.progression_rearrange:
+            if x is not None:
                 start = observed['ghost']
                 # A verified preview owns this drag. No existing building is selected.
                 r.input.client.run(['shell','input','touchscreen','draganddrop',str(start[0]),str(start[1]),
@@ -131,12 +134,15 @@ class Construction:
                 return observed
             if r.stopped():return None
             r.input.tap(*observed['cancel'],jitter=0)
-            if r.wait():return None
-            after=r.capture.screenshot()
-            if self.controls(after) is not None:
-                from coc_bot.runtime.verification import save_frame
-                save_frame(r.config,'construction-cancel',after)
-                raise ValueError('Placement cancellation was not verified; obstacle search blocked')
+            # A cancel may still be animating on the first frame. Observe the
+            # transition without repeating the tap or moving a held building.
+            for _ in range(4):
+                if r.wait(.2) or r.stopped():return None
+                after = r.capture.screenshot()
+                if self.controls(after) is None:return None
+            from coc_bot.runtime.verification import save_frame
+            save_frame(r.config,'construction-cancel',after)
+            raise ValueError('Placement cancellation was not verified; obstacle search blocked')
         return None
 
     def start(self, row, before):

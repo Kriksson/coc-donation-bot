@@ -4,6 +4,7 @@ import time
 from coc_bot.upgrades.vision import crop, text, compact, resource_amount, currency, Candidate
 from coc_bot.upgrades.runner import write_json
 from coc_bot.progression.reader import selected_title, balance_amount
+from coc_bot.progression import wall_evidence
 
 
 def wall_panel(frame, stop=None):
@@ -31,7 +32,22 @@ def wall_panel(frame, stop=None):
 class WallUpgrade:
     def __init__(self,runner):self.r=runner
 
-    def recover(self, state):
+    def finish(self,state,**proof):
+        updated=state.copy()
+        completed=updated.pop('pending')|{'phase':'confirmed',**proof}
+        updated['last_completed']=completed
+        write_json(self.r.path,updated)
+        state.pop('pending')
+        state['last_completed']=completed
+        wall_evidence.mark_confirmed(self.r,completed)
+
+    def recover(self, state, *, immediate=False):
+        try:
+            return self._recover(state, immediate)
+        except wall_evidence.EvidenceError as exc:
+            return {'status':'needs_review','message':f'Wall after evidence unavailable: {exc}'}
+
+    def _recover(self, state, immediate):
         pending=state.get('pending',{})
         remaining,target=pending.get('remaining_before'),pending.get('target_level')
         before,cost=pending.get('balance_before'),pending.get('cost')
@@ -47,9 +63,14 @@ class WallUpgrade:
             from coc_bot.progression.bulk_walls import confirmation
             frame=r.capture.screenshot()
             point=confirmation(frame,cost,pending['currency'],r.stop)
+            if immediate and not point:
+                wall_evidence.observe(r,pending,'after_selection',frame,confirmation_visible=False)
             if point:
+                if 'intent_id' in pending and not immediate:
+                    return {'status':'needs_review','message':'Pending wall confirmation requires review after interruption'}
                 if pending.get('confirmation_attempts',0)>=1:
                     return {'status':'needs_review','message':'Bulk wall confirmation was already sent; no repeated payment'}
+                wall_evidence.observe(r,pending,'bulk_dialog',frame,cost=cost,currency=pending['currency'])
                 if r.stopped() or confirmation(r.capture.screenshot(),cost,pending['currency'],r.stop)!=point:
                     return {'status':'needs_review','message':'Bulk wall payment confirmation changed'}
                 pending.update(phase='paying',confirmation_attempts=1)
@@ -61,18 +82,22 @@ class WallUpgrade:
             if r.stopped():return {'status':'stopped'}
             r.close();frame=r.open_menu('buildings')
             if frame is None:return {'status':'stopped'}
-            inventory=r.scan(frame)
+            inventory=self.scan_after(frame,pending,unit_cost,target)
             balance=inventory.get('balances',{}).get(pending['currency'])
             if (not inventory.get('complete') or not inventory.get('unfiltered') or inventory.get('unknown')
                 or type(balance) is not int or not before-cost<=balance<before
                 or queue_count(inventory['rows'],pending|{'cost':unit_cost},target,complete=True)!=remaining-count):
                 return {'status':'needs_review','message':'Wall level queue and payment could not both be verified'}
-        state['last_completed']=state.pop('pending')|{'phase':'confirmed','level_after':target,
-                                                     'receipt_method':'two_complete_wall_queues'}
-        write_json(r.path,state)
+        self.finish(state,level_after=target,receipt_method='two_complete_wall_queues')
         return {'status':'recovered','message':'Previous wall upgrade independently confirmed; no payment repeated'}
 
     def run(self,row):
+        try:
+            return self._run(row)
+        except wall_evidence.EvidenceError as exc:
+            return {'status':'needs_review','message':f'Wall after evidence unavailable: {exc}'}
+
+    def _run(self,row):
         if row.get('currency') not in ('gold','elixir'):
             return {'status':'blocked','message':'Walls require a verified gold or elixir price'}
         r=self.r;found=r.find_row(row)
@@ -110,16 +135,19 @@ class WallUpgrade:
             return {'status':'blocked','message':'Wall queue count/target level is unverified; nothing spent'}
         from coc_bot.progression.bulk_walls import control,BulkWalls
         if type(remaining) is int and control(second_frame,'upgrade_more') is not None:
-            return BulkWalls(r).run(row,first,remaining,before)
-        state['pending']={'kind':'wall','name':'Wall','cost':row['cost'],'currency':row['currency'],
+            return BulkWalls(r).run(row,first,remaining,before,(first_frame,second_frame))
+        receipt={'kind':'wall','name':'Wall','cost':row['cost'],'currency':row['currency'],
                           'level_before':first['level'],'balance_before':before,'phase':'confirming','at':time.time(),
                           'remaining_before':remaining,'target_level':target}
-        write_json(r.path,state)
+        failure=wall_evidence.begin(r,state,receipt,(first_frame,second_frame))
+        if failure:return failure
+        pending=state['pending']
         if r.stopped():return {'status':'needs_review'}
         r.input.tap(*first['point'],jitter=0)
         if r.wait(.8):return {'status':'needs_review'}
         frame=r.capture.screenshot();confirmation=r.reader.confirmation(frame,candidate)
         if confirmation is not None:
+            wall_evidence.observe(r,pending,'single_dialog',frame,cost=row['cost'],currency=row['currency'])
             if r.reader.confirmation(r.capture.screenshot(),candidate)!=confirmation:
                 return {'status':'needs_review','message':'Wall confirmation changed; no second tap sent'}
             if r.stopped():return {'status':'needs_review'}
@@ -128,29 +156,43 @@ class WallUpgrade:
             frame=r.capture.screenshot()
         after=wall_panel(frame,r.stop)
         balance=wall_balance(frame,r.reader,row['currency'],r.stop)
+        wall_evidence.observe(r,pending,'after_panel',frame,level=after and after['level'],balance=balance)
         confirmed=after is not None and after['level']==target and balance==before-row['cost']
         if not confirmed and type(remaining) is int and remaining>=1 and balance==before-row['cost']:
             # Instant upgrades deselect the wall. In that layout, independently
             # verify that exactly one wall left this target-level/price queue.
-            confirmed=self.confirm_queue(row,target,remaining,frame,before-row['cost'])
+            confirmed=self.confirm_queue(row,target,remaining,frame,before-row['cost'],pending)
         if not confirmed and balance==before-row['cost'] and type(remaining) is int:
             # Instant upgrades can close the sidebar and deselect the wall.
             # Reopen only the verified Build menu and read complete inventories.
-            result=self.recover(state)
-            if result['status']=='recovered':return result
+            return self.recover(state)
         if not confirmed:
             return {'status':'needs_review','message':'Instant wall upgrade was not independently confirmed; repeat spending blocked'}
-        state['last_completed']=state.pop('pending')|{'phase':'confirmed','level_after':target}
-        write_json(r.path,state)
+        self.finish(state,level_after=target)
         return {'status':'started','message':'Wall level '+str(target)+' confirmed','spent':row['cost']}
 
-    def confirm_queue(self,row,target,remaining,frame,expected_balance):
+    def scan_after(self,opening_frame,pending,unit_cost,target):
+        inventory=self.r.scan(opening_frame)
+        if 'intent_id' in pending:
+            readable=inventory.get('complete') and inventory.get('unfiltered') and not inventory.get('unknown')
+            count=queue_count(inventory['rows'],pending|{'cost':unit_cost},target,complete=bool(readable))
+            # The frame is the menu at entry; the count describes the whole scroll scan.
+            wall_evidence.observe(self.r,pending,'after_inventory',opening_frame,
+                                  image_source='menu_at_scan_start',
+                                  balance=inventory.get('balances',{}).get(pending['currency']),
+                                  remaining=count,target_level=target,complete=inventory.get('complete'),
+                                  unfiltered=inventory.get('unfiltered'),unknown=inventory.get('unknown'))
+        return inventory
+
+    def confirm_queue(self,row,target,remaining,frame,expected_balance,pending=None):
         r=self.r
         if remaining>1:
             for _ in range(2):
                 if r.stopped() or r.reader.menu_kind(frame)!='buildings':return False
-                if queue_count(r.reader.rows(frame),row,target)!=remaining-1:return False
-                if wall_balance(frame,r.reader,row['currency'],r.stop)!=expected_balance:return False
+                count=queue_count(r.reader.rows(frame),row,target)
+                balance=wall_balance(frame,r.reader,row['currency'],r.stop)
+                wall_evidence.observe(r,pending or {},'after_queue',frame,remaining=count,target_level=target,balance=balance)
+                if count!=remaining-1 or balance!=expected_balance:return False
                 frame=r.capture.screenshot()
             return True
         # The last wall disappears from the list. A missing row on one scrolled
@@ -159,7 +201,7 @@ class WallUpgrade:
             if r.stopped():return False
             r.close();opened=r.open_menu('buildings')
             if opened is None:return False
-            inventory=r.scan(opened)
+            inventory=self.scan_after(opened,pending or {},row['cost'],target)
             if (not inventory.get('complete') or not inventory.get('unfiltered') or inventory.get('unknown') or
                     inventory['balances'].get(row['currency'])!=expected_balance or
                     queue_count(inventory['rows'],row,target,complete=True)!=0):return False
