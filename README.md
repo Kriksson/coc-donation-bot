@@ -292,6 +292,13 @@ spells such as Recall, inconsistent counts, or an incomplete map stop deployment
 An entered but skipped match is cleaned up and gets a retry cooldown, rather
 than repeatedly retrying the same unsupported army.
 
+Hero portrait recognition is shared across registered accounts. Standard King,
+Queen, Warden, Royal Champion and Minion Prince portraits are bundled; reviewed
+skins saved on any account are reused by the others. Hero levels and pet badges
+are excluded from learned artwork. Availability and deployment are still checked
+on the current battle screen; sharing a portrait never shares an account's army
+or saved attack plan. Unrecognized skins remain unused until reviewed once.
+
 Connection, navigation calibration, unit artwork, and the pinned gesture server
 are still required. This is not universal army/scenery support. Test one attack
 before enabling its schedule.

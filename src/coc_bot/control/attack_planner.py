@@ -45,6 +45,7 @@ def learned_catalog(config, *, unit_ids=None, use_saved_routine=True):
     for path in sorted(root.glob('*.json')) if root.exists() else []:
         try:
             value=json.loads(path.read_text(encoding='utf-8'))
+            if value.get('kind') == 'hero':continue
             image=cv2.imread(str(path.with_suffix('.png')))
             if (image is None or value['device']!=config.adb_device or
                     unit_ids is not None and value['unit_id'] not in unit_ids): continue
@@ -52,6 +53,8 @@ def learned_catalog(config, *, unit_ids=None, use_saved_routine=True):
             card=ArmyCard('learned',(0,0,w,h),value['unit_id'],value['kind'],1,confirmed=True)
             catalog.add_references(image,[card])
         except (ValueError,KeyError,TypeError,OSError): continue
+    from coc_bot.attack.hero_library import add_shared_heroes
+    add_shared_heroes(config,catalog,unit_ids=unit_ids)
     if unit_ids is not None:
         # Renaming a reviewed hero must not leave two names competing for the
         # same portrait. Keep old files for recovery, but use this plan's names.

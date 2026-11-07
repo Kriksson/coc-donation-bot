@@ -34,6 +34,8 @@ def automatic_plan(cards, *, progression=False, deploy_line=None):
     army = []
     seen = set()
     for card in cards:
+        if card.kind == 'hero' and card.quantity == 0:
+            continue
         if card.unit_id == CLAN_CASTLE and not available_castle(card):
             logger.info('Automatic attack: Clan Castle unavailable; continuing without reinforcements')
             continue
@@ -117,6 +119,8 @@ def scan_army(session, catalog):
         observed = agree_cards(before, read_army(second, 'battle', catalog, stop_check=stop))
         after = []
         for card in observed:
+            if card.kind == 'hero' and card.quantity == 0:
+                continue
             if card.unit_id == CLAN_CASTLE and not available_castle(card):
                 continue
             if not supported_identity(card, progression=progression):

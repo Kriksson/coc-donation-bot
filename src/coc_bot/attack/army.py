@@ -79,6 +79,10 @@ class UnitCatalog:
                 mask[round(h*.25):round(h*.78),round(w*.32):round(w*.78)] = 255
             else:
                 mask[round(h*top):round(h*.78),round(w*.15):round(w*.85)] = 255
+                if card.kind == 'hero':
+                    # Pet/equipment badges differ by account and level. Learn
+                    # the face/crown, not the badge attached at upper left.
+                    mask[:round(h*.34),:round(w*.40)] = 0
             keys,descriptors = sift.detectAndCompute(cv2.cvtColor(image,cv2.COLOR_BGR2GRAY),mask)
             if descriptors is not None:
                 self.references.append((card.unit_id,card.kind,keys,descriptors,w,h))
@@ -430,8 +434,9 @@ def read_army(frame, page, catalog, *, stop_check=None):
             if unit_id == CLAN_CASTLE:
                 # A remembered emblem alone cannot prove live availability.
                 quantity,source = None,'Clan Castle availability unverified'
-            if kind == 'hero' and quantity is None:
-                quantity,source = 1,'identified hero card; availability checked during execution'
+            if kind == 'hero':
+                quantity = 0 if depleted_card(cell,hero=True) else 1
+                source = 'hero portrait unavailable' if quantity == 0 else 'identified hero card; availability checked during execution'
             if quantity is None and kind == 'siege' and unit_id != CLAN_CASTLE:
                 quantity,source = 1,'single siege card; availability unverified'
             if page == 'battle' and unit_id is None and quantity is None:
@@ -445,12 +450,13 @@ def read_army(frame, page, catalog, *, stop_check=None):
     return cards
 
 
-def depleted_card(cell):
+def depleted_card(cell, *, hero=False):
     """Grey, dark artwork with no readable count is depleted, never an OCR default."""
     h,w=cell.shape[:2]
     art=cell[round(h*.28):round(h*.76),round(w*.18):round(w*.82)]
     hsv=cv2.cvtColor(art,cv2.COLOR_BGR2HSV)
-    return bool((hsv[:,:,1]<45).mean()>.85 and np.median(hsv[:,:,2])<145)
+    # Unavailable heroes retain a bright grey portrait, unlike depleted troops.
+    return bool((hsv[:,:,1]<45).mean()>.85 and (hero or np.median(hsv[:,:,2])<145))
 
 
 def resolve_live_card(frame, catalog, unit_id, *, stop_check=None):
@@ -469,7 +475,7 @@ def resolve_live_card(frame, catalog, unit_id, *, stop_check=None):
         if not match or match[0]!=unit_id: continue
         _,kind,score,margin=match
         quantity=read_badge(cell,stop_check=stop_check)
-        if quantity is None and depleted_card(cell): quantity=0
+        if quantity is None and depleted_card(cell,hero=kind=='hero'): quantity=0
         elif quantity is None and kind in ('hero','siege'): quantity=1
         found.append(ArmyCard(f'card-{index}',box,unit_id,kind,quantity,score,margin))
     if len(found)!=1: raise ValueError('Unit is hidden or ambiguous: '+unit_id)

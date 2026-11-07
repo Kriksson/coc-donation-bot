@@ -84,6 +84,8 @@ def farming_plan(cards, *, deploy_line=None):
             steps.append(PlanStep('wait', seconds=1))
     extra = []
     for card in cards:
+        if card.kind == 'hero' and card.quantity == 0:
+            continue
         if card.unit_id == CLAN_CASTLE and not available_castle(card):
             continue
         if card.kind not in ('hero','siege','spell') or not card.unit_id:
