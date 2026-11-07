@@ -4,7 +4,7 @@ import {EmptyState,Icon} from './ui';
 const roles = {donating:'Donating', farming:'Farming', upgrading:'Upgrading', builder_base:'Builder Base'};
 type Maintenance = {categories?:Record<string,{at:number;status:string;message?:string;availability?:number[]}>};
 type Account = {id:string;tag:string;nickname:string;roles:string[];clan_tag?:string|null;maintenance?:Maintenance};
-type Rotation = {enabled:boolean;primary_id:string|null;watch_seconds:number;visit_seconds:number;interval_seconds:number};
+type Rotation = {enabled:boolean;primary_id:string|null;task_driven?:boolean;watch_seconds:number;visit_seconds:number;interval_seconds:number};
 type Registry = {accounts:Account[];active:string|null;pending:{kind:string;target?:string|null}|null;rotation?:Rotation};
 
 export function Accounts({api,locked,result,operation,working,jobError,live,onChanged,stop}:{api:(p:string,m?:string,b?:unknown)=>Promise<any>;
@@ -99,6 +99,15 @@ export function Accounts({api,locked,result,operation,working,jobError,live,onCh
             interval_seconds:data.rotation?.interval_seconds||1800}));}
           catch(e){setError((e as Error).message);}finally{setBusy(false);}
         }}/>Automatic account visits</label>
+      {!!data.rotation?.enabled&&<label className="toggle"><input type="checkbox" disabled={disabled||!!data.pending}
+        checked={!!data.rotation.task_driven} onChange={async e=>{
+          setBusy(true);try{setData(await api('accounts/rotation','PUT',{
+            enabled:true,primary_id:data.rotation!.primary_id,task_driven:e.target.checked,
+            watch_seconds:data.rotation!.watch_seconds,visit_seconds:data.rotation!.visit_seconds,
+            interval_seconds:data.rotation!.interval_seconds}));}
+          catch(e){setError((e as Error).message);}finally{setBusy(false);}
+        }}/>Check chat between tasks</label>}
+      {!!data.rotation?.task_driven&&<p>All accounts continue their work, checking chat after each task. There is no required chat-watching time.</p>}
       {!!data.rotation?.enabled&&<label>Main donation account<select disabled={disabled||!!data.pending}
         value={data.rotation.primary_id||''} onChange={async e=>{
           setBusy(true);try{setData(await api('accounts/rotation','PUT',{

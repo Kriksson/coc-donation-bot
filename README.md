@@ -299,6 +299,12 @@ are excluded from learned artwork. Availability and deployment are still checked
 on the current battle screen; sharing a portrait never shares an account's army
 or saved attack plan. Unrecognized skins remain unused until reviewed once.
 
+With **Accounts → Check chat between tasks** enabled, the donor works like the
+other accounts: check chat after each task, handle a request pass, then continue.
+Accounts rotate directly to the next due village at safe task boundaries without
+required donor watch time. Unfinished checklists resume on their next turn;
+resource-full limits, failed-attack cooldowns and payment guards still apply.
+
 Connection, navigation calibration, unit artwork, and the pinned gesture server
 are still required. This is not universal army/scenery support. Test one attack
 before enabling its schedule.

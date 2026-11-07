@@ -36,6 +36,7 @@ class Start(Payload):
 class AccountRotation(Payload):
     enabled: StrictBool
     primary_id: str = Field(min_length=32,max_length=32)
+    task_driven: StrictBool | None = None
     watch_seconds: StrictInt = 900
     visit_seconds: StrictInt = 180
     interval_seconds: StrictInt = 1800

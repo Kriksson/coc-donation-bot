@@ -381,6 +381,9 @@ class DonationBot:
                 self._visit_chat_pending=self._state in ('open_donation','donate')
             elif self._state=='open_donation':self._do_open_donation()
             elif self._state=='donate':self._do_donate()
+            if (getattr(self,'_fleet_task_driven',False) and
+                    self._state in ('scan_chat','scroll_chat')):
+                self._visit_chat_pending=False
             self.tracker.tick();return
         order=getattr(self,'_fleet_work_order',lambda:visit.order() if visit else tuple(work))()
         if visit and self._state in ('open_donation','donate'):order=()
@@ -438,7 +441,8 @@ class DonationBot:
                 self.tracker.tick()
                 return
 
-        if not getattr(self.config,'donation_enabled',True):
+        if (not getattr(self.config,'donation_enabled',True) or
+                getattr(self,'_fleet_task_driven',False) and self._state in ('scan_chat','scroll_chat')):
             self.tracker.tick()
             self._state_entered = time.monotonic()
             interrupted_sleep(2, self.should_stop)
@@ -486,7 +490,7 @@ class DonationBot:
         if (not unresolved and automatic.get('hall')==self.config.account_town_hall
             and automatic.get('revision')==REVISION
             and time.time()<automatic.get('next_check_at',0)):return False
-        if not unresolved and self._has_donate_request(self.capture.screenshot()):
+        if not unresolved and not getattr(self,'_fleet_task_driven',False) and self._has_donate_request(self.capture.screenshot()):
             self._visit_repeat=True;return False
         runner=self._layout_runner()
         self.set_mode(BotMode.HOME)
@@ -526,7 +530,7 @@ class DonationBot:
         visit = state(self.config)
         if not getattr(self,'_visit',None) and time.time() < visit.get('next_visit_at',0):
             return False
-        if self._has_donate_request(self.capture.screenshot()):
+        if not getattr(self,'_fleet_task_driven',False) and self._has_donate_request(self.capture.screenshot()):
             self._visit_repeat=True
             return False
         self._set_state('builder_base')
@@ -575,7 +579,7 @@ class DonationBot:
         if not kinds or time.monotonic()<self._next_upgrade_check:
             return False
         frame=self.capture.screenshot()
-        if self._has_donate_request(frame):
+        if not getattr(self,'_fleet_task_driven',False) and self._has_donate_request(frame):
             self._visit_repeat=True
             return False
         self._next_upgrade_check=time.monotonic()+self.config.upgrade_interval_seconds

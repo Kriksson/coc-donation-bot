@@ -24,23 +24,31 @@ class RotationStore:
 
     def load(self):
         value=read(self.path,{})
-        return {'enabled':False,'primary_id':None,'watch_seconds':900,'visit_seconds':180,
+        return {'enabled':False,'primary_id':None,'task_driven':False,'watch_seconds':900,'visit_seconds':180,
                 'interval_seconds':1800,'visits':{},'paused_at':None}|value
 
-    def configure(self, *, enabled, primary_id, watch_seconds=900, visit_seconds=180, interval_seconds=1800):
+    def configure(self, *, enabled, primary_id, watch_seconds=900, visit_seconds=180, interval_seconds=1800,
+                  task_driven=None):
         state=self.accounts.load()
+        previous=self.load()
+        if task_driven is None:task_driven=previous['task_driven']
+        if type(task_driven) is not bool:raise ValueError('Choose a valid account scheduling mode')
         main=next((a for a in state['accounts'] if a['id']==primary_id),None)
         if type(enabled) is not bool or main is None or 'donating' not in main['roles']:
             raise ValueError('Choose a saved account with the Donating role as the main account')
         if any(type(n) is not int for n in (watch_seconds,visit_seconds,interval_seconds)):
             raise ValueError('Account visit times must be whole seconds')
-        if not 60<=visit_seconds<=600 or not 300<=watch_seconds<=7200 or watch_seconds<3*visit_seconds:
+        if not 60<=visit_seconds<=600 or not 300<=watch_seconds<=7200 or (not task_driven and watch_seconds<3*visit_seconds):
             raise ValueError('Main-account time must be at least three times each other visit (60–600 seconds)')
         if not 300<=interval_seconds<=86400:
             raise ValueError('Account check interval must be between five minutes and one day')
-        value=self.load()|{'enabled':enabled,'primary_id':primary_id,'watch_seconds':watch_seconds,
+        value=previous|{'enabled':enabled,'primary_id':primary_id,'task_driven':task_driven,'watch_seconds':watch_seconds,
                           'visit_seconds':visit_seconds,'interval_seconds':interval_seconds}
         if state.get('pending'):raise ValueError('Finish adding or verifying the loaded account first')
+        if task_driven and not previous['task_driven']:
+            # Remove old donor-policy scheduling delays, not action cooldowns
+            # or persisted checklist/payment state.
+            for visit in value['visits'].values():visit['next_visit_at']=0
         write(self.path,value)
         return value
 
@@ -58,9 +66,10 @@ class RotationStore:
     def pause(self, now):
         state=self.load();state['paused_at']=now;write(self.path,state)
 
-    def next_account(self, now):
+    def next_account(self, now, *, current_id=None):
         state=self.load()
-        eligible=[a for a in self.accounts.load()['accounts'] if a['id']!=state['primary_id'] and
+        excluded=(current_id or self.accounts.load()['active']) if state['task_driven'] else state['primary_id']
+        eligible=[a for a in self.accounts.load()['accounts'] if a['id']!=excluded and
                   set(a['roles']) & {'farming','upgrading','builder_base'} and
                   state['visits'].get(a['id'],{}).get('next_visit_at',0)<=now]
         return min(eligible,key=lambda a:state['visits'].get(a['id'],{}).get('last_checked_at',
@@ -80,6 +89,14 @@ class RotationStore:
             if checklist.get('deferred') or attention:
                 visit['next_visit_at']=min(visit['next_visit_at'],now+300)
         if not suspended:visit['last_finished_at']=now
+        if state['task_driven']:
+            # Unfinished work is eligible on the next fair turn. Finished
+            # checklists keep their own short recheck/cooldown, not a donor wait.
+            checklist=read(self.accounts.profile(account)/'data/visits/state.json',{}) if account else {}
+            visit['next_visit_at']=now if suspended else max(now+60,checklist.get('next_check_at',now+300))
+            state.pop('next_watch_seconds',None)
+            write(self.path,state)
+            return
         # Goal-based visits can legitimately include several battles. Do not
         # turn one long visit into hours of starvation for the remaining queue.
         if ident!=state['primary_id']:state['next_watch_seconds']=state['watch_seconds']
@@ -183,9 +200,12 @@ class AccountFleet:
         if detour and account['id']!=detour['donor']:
             self._next=detour['donor'];return True
         if detour and account['id']==detour['donor']:
-            if now-started<5:return False
-            request=self.current._has_donate_request(self.current.capture.screenshot())
-            if request and now-started<180:return False
+            if state['task_driven']:
+                if getattr(self.current,'_visit_chat_pending',False) is True:return False
+            else:
+                if now-started<5:return False
+                request=self.current._has_donate_request(self.current.capture.screenshot())
+                if request and now-started<180:return False
             self._next=detour['resume']
             if detour['resume']==account['id']:state.pop('donation_detour',None)
             else:detour['phase']='returning'
@@ -197,6 +217,20 @@ class AccountFleet:
         if completed and completed!=visit.get('last_attack_id'):
             visit.update(last_attack_id=completed)
             write(self.rotation.path,state)
+        if state['task_driven']:
+            visit=getattr(self.current,'_visit',None)
+            # Finish the one request pass discovered at the task boundary.
+            # Open donation states never enter this checkpoint.
+            if ('donating' in account['roles'] and
+                    getattr(self.current,'_visit_chat_pending',False) is True):return False
+            complete=bool(visit and visit.complete())
+            if not complete and now-started<state['visit_seconds']:return False
+            target=self.rotation.next_account(now,current_id=account['id'])
+            if target is None:return False
+            self._visit_suspended=not complete
+            self._next=target['id']
+            logger.info('Task rotation: handing off to {} at a safe checkpoint',target.get('nickname',target['id']))
+            return True
         if account['id']==state['primary_id']:
             visit=getattr(self.current,'_visit',None)
             window=state.get('next_watch_seconds',state['watch_seconds'])
@@ -257,7 +291,7 @@ class AccountFleet:
             logger.info('Clan chat check complete: no donation request found')
             return True
         if 'donating' in account['roles']:
-            if account['id']==state['primary_id'] and self._next not in (None,account['id']):
+            if (state['task_driven'] or account['id']==state['primary_id']) and self._next not in (None,account['id']):
                 # The donor has already offered its final request pass. Keep
                 # the scheduled target even if the final chat peek finds more.
                 return True
@@ -311,15 +345,16 @@ class AccountFleet:
                         primary=account['id']==main['id']
                         # Maintenance and account travel incur chat time debt.
                         # Repay it at idle checkpoints; never interrupt actions.
-                        self.current._fleet_work_order=lambda: (() if primary and not self._watch.funded() else
+                        self.current._fleet_task_driven=state['task_driven']
+                        self.current._fleet_work_order=lambda: (() if primary and not state['task_driven'] and not self._watch.funded() else
                             visit.order() if visit else self.rotation.work_order(account['id']))
-                        if primary:self.current._fleet_chat_seconds=self._watch.credit
+                        if primary and not state['task_driven']:self.current._fleet_chat_seconds=self._watch.credit
                         self.current._fleet_after_step=lambda:setattr(self,'_chat_due',True)
                         self.current._fleet_work_attempted=lambda kind:self.rotation.work_attempted(account['id'],kind,self.clock())
                         detour=self.rotation.load().get('donation_detour')
                         if detour and account['id']==detour['donor']:
                             self.current._fleet_work_order=lambda:()
-                        self.activity=('Watching '+account['nickname'] if account['id']==main['id']
+                        self.activity=('Watching '+account['nickname'] if account['id']==main['id'] and not state['task_driven']
                                        else 'Visiting '+account['nickname'])
                         logger.info('Activity: {}',self.activity)
                         self.current.run_owned()

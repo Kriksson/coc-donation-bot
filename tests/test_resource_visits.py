@@ -417,6 +417,16 @@ class HomeChecklistTests(unittest.TestCase):
         self.assertTrue(bot._visit_repeat)
         self.assertEqual(factory.return_value.run.call_count,1)
 
+    def test_task_mode_does_not_recheck_a_request_instead_of_starting_maintenance(self):
+        bot=self.bot();bot._fleet_task_driven=True
+        bot._has_donate_request.return_value=True
+        with patch('coc_bot.upgrades.runner.UpgradeRunner') as factory:
+            factory.return_value.state.return_value={}
+            factory.return_value.run.return_value={'status':'busy'}
+            self.assertTrue(bot._maybe_run_upgrades())
+        self.assertEqual(factory.return_value.run.call_count,3)
+        bot._has_donate_request.assert_not_called()
+
 
 class ArmyHallHintTests(unittest.TestCase):
     def test_verified_air_army_survives_missing_filler_unlock(self):
