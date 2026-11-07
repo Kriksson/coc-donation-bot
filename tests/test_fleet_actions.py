@@ -86,10 +86,10 @@ class RequestVisionTests(unittest.TestCase):
             image=self.dialog.copy();image[y1:y2,x1:x2]=0
             self.assertIsNone(request_dialog(image))
 
-    def test_donor_practice_and_locked_castle_are_excluded(self):
+    def test_donor_can_request_but_practice_and_locked_castles_are_excluded(self):
         config=SimpleNamespace(account_tag='#ABC',account_roles=('farming',),account_town_hall=10,dry_run=False)
         self.assertTrue(eligible(config))
-        config.account_roles=('donating','farming');self.assertFalse(eligible(config))
+        config.account_roles=('donating','farming');self.assertTrue(eligible(config))
         config.account_roles=('farming',);config.account_town_hall=2;self.assertFalse(eligible(config))
         config.account_town_hall=10;config.dry_run=True;self.assertFalse(eligible(config))
 
@@ -103,7 +103,7 @@ class RequestTransactionTests(unittest.TestCase):
                                     capture=Mock(),input=Mock(),_sleep=Mock())
             with patch('coc_bot.donation.reinforcements.ArmyPreparation') as prep,\
                  patch('coc_bot.donation.reinforcements.castle_contents',return_value=(('troop',0,35),)),\
-                 patch('coc_bot.donation.reinforcements.available_button',side_effect=[(1,2),(1,2),None]),\
+                 patch('coc_bot.donation.reinforcements.available_button',side_effect=[(1,2),(1,2),None,None]),\
                  patch('coc_bot.donation.reinforcements.request_dialog',side_effect=[{'send':(3,4),'cancel':(5,6)}]*2+[None]),\
                  patch('coc_bot.donation.reinforcements.army_heading_visible',return_value=True):
                 def tap(*args,**kwargs):

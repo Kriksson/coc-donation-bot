@@ -423,7 +423,10 @@ class DonationBot:
                 attempted=False
             else:
                 if visit and name=='upgrades':self._next_upgrade_check=0
-                attempted=work[name]()
+                from coc_bot.runtime.task_timing import measure_task
+                with measure_task(getattr(self.config, 'account_tag', None), name) as timing:
+                    attempted=work[name]()
+                    timing['outcome'] = 'attempted' if attempted else 'no_action'
             pending_after=UpgradeRunner(self.config,self.capture,self.nav_input,self.navigator).state().get('pending') if visit else None
             unresolved=(pending_after or builder_pending(self.config) or pending(self.config)) if visit else None
             if visit and not unresolved and self._state in ('scan_chat','scroll_chat') and not self.should_stop():
@@ -562,8 +565,11 @@ class DonationBot:
         from coc_bot.donation.reinforcements import request_if_empty,eligible
         if not eligible(self.config):return False
         from coc_bot.attack.planned_farmer import context
+        from coc_bot.runtime.task_timing import measure_task
         try:
-            result=request_if_empty(context(self.farmer))
+            with measure_task(getattr(self.config, 'account_tag', None), 'castle_request') as timing:
+                result=request_if_empty(context(self.farmer))
+                timing['outcome'] = 'checked' if result else 'cooldown'
             if result:logger.info('Clan Castle request check finished')
             return result
         finally:
@@ -610,7 +616,10 @@ class DonationBot:
             while queue and attempts<(1 if visit else 10):
                 kind=queue.pop(0)
                 if self._stop_requested: break
-                result=runner.run(kind,execute=True)
+                from coc_bot.runtime.task_timing import measure_task
+                with measure_task(getattr(self.config, 'account_tag', None), 'upgrade.' + kind) as timing:
+                    result=runner.run(kind,execute=True)
+                    timing['outcome'] = result.get('status', 'unknown')
                 from coc_bot.runtime.verification import log_result
                 log_result(self.config,'home.'+kind,result,pending=runner.state().get('pending'))
                 attempts+=1
@@ -743,11 +752,20 @@ class DonationBot:
         if not manual and not self.config.farm_enabled:
             return False
 
+        # A refill can repeat for several battles before the visit reaches its
+        # ordinary request step. Give an empty castle a chance before matching.
+        self._maybe_request_reinforcements()
+        if self.should_stop():
+            return False
+
         logger.info('Pausing donations for resource refill attack (manual={})',manual)
         self._set_state("farm")
         self.game_state.transition(GameState.HOME, reason="farm start")
         self.set_mode(BotMode.HOME)
-        result = self.farmer.run_one_attack()
+        from coc_bot.runtime.task_timing import measure_task
+        with measure_task(getattr(self.config, 'account_tag', None), 'home_attack') as timing:
+            result = self.farmer.run_one_attack()
+            timing['outcome'] = 'reported_success' if result.success else 'incomplete'
         from coc_bot.vision import recorder
 
         if not self._stop_requested:
@@ -1035,11 +1053,14 @@ class DonationBot:
             self._set_state("scan_chat")
             return
 
-        donated = self.executor.donate_for_request(
-            is_specific=request.is_specific,
-            kind=request.kind,
-            capacity=request.capacity,
-        )
+        from coc_bot.runtime.task_timing import measure_task
+        with measure_task(getattr(self.config, 'account_tag', None), 'donation') as timing:
+            donated = self.executor.donate_for_request(
+                is_specific=request.is_specific,
+                kind=request.kind,
+                capacity=request.capacity,
+            )
+            timing['outcome'] = 'reported_donation' if donated else 'no_donation'
         logger.info("Donation round complete (donated={})", donated)
         from coc_bot.vision import recorder
 

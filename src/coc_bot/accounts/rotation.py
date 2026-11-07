@@ -279,9 +279,13 @@ class AccountFleet:
             logger.info('Clan chat check skipped: no verified same-clan donor is available')
             return True
         from coc_bot.donation.chat_check import peek_requests
+        from coc_bot.runtime.task_timing import measure_task
         stop=lambda:self.cancel.is_set() or self.finish_action
         try:
-            request=peek_requests(self.current.capture,self.current.navigator,self.current.chat_monitor,stop)
+            with measure_task(account['tag'], 'chat_check') as timing:
+                request=peek_requests(self.current.capture,self.current.navigator,self.current.chat_monitor,stop)
+                timing['outcome'] = ('stopped' if stop() else
+                                     'request_found' if request is not None else 'no_request')
         except ValueError as exc:
             from coc_bot.runtime.verification import record_failure
             record_failure(self.current.config,'accounts.chat_check',str(exc))
@@ -385,11 +389,16 @@ class AccountFleet:
                         target=self.store.account(self._next)
                         if target is None:raise ValueError('Next saved account disappeared')
                         self.activity='Switching to '+target['nickname']
-                        self.store.begin('switch',target['id'])
-                        nav=AccountNavigator(self.current,self.cancel.is_set)
-                        identity=nav.switch(target)
-                        if self.cancel.is_set():break
-                        self.store.complete(identity['tag'],hall=identity.get('hall'))
+                        from coc_bot.runtime.task_timing import measure_task
+                        with measure_task(account['tag'], 'account_switch') as timing:
+                            self.store.begin('switch',target['id'])
+                            nav=AccountNavigator(self.current,self.cancel.is_set)
+                            identity=nav.switch(target)
+                            if self.cancel.is_set():
+                                timing['outcome'] = 'stopped'
+                                break
+                            self.store.complete(identity['tag'],hall=identity.get('hall'))
+                            timing['outcome'] = 'verified'
                         from coc_bot.accounts.handoff import VerifiedHandoff
                         verified_handoff=VerifiedHandoff(identity['tag'],self.store.profile(target)/'data',
                                                          session.config.adb_device,lease)

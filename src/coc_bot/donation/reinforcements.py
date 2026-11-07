@@ -1,8 +1,9 @@
-"""Normal clan requests for non-donating accounts. No gems or raid medals."""
+"""Normal clan requests for accounts with an unlocked Clan Castle."""
 from functools import lru_cache
 from pathlib import Path
 import time
 import cv2
+from loguru import logger
 from coc_bot.attack.army import check_stop
 from coc_bot.attack.recovery import atomic_json
 from coc_bot.accounts.store import read
@@ -62,7 +63,6 @@ def available_button(frame, stop=None):
 
 def eligible(config):
     return bool(getattr(config,'account_tag',None) and
-                'donating' not in getattr(config,'account_roles',()) and
                 (getattr(config,'account_town_hall',0) or 0)>=3 and not config.dry_run)
 
 
@@ -72,9 +72,13 @@ def request_if_empty(session):
     path=config.data_dir/'reinforcements/state.json'
     state=read(path,{})
     if state.get('account_tag')==config.account_tag and time.time()<state.get('next_check_at',0):return False
+    started = time.monotonic()
     def record(status, delay=600):
         atomic_json(path,{'account_tag':config.account_tag,'status':status,'at':time.time(),
                           'next_check_at':time.time()+delay})
+        if status not in ('checking', 'send_pending'):
+            logger.info('Clan Castle request: account={} outcome={} seconds={:.2f}',
+                        config.account_tag, status, time.monotonic()-started)
     record('checking')
     prep=ArmyPreparation(session)
     stop=session.client.stop_check
@@ -84,9 +88,13 @@ def request_if_empty(session):
         second=session.capture.screenshot()
         a,b=castle_contents(first,stop),castle_contents(second,stop)
         point=available_button(second,stop)
-        if not a or a!=b or any(row[1]!=0 for row in b) or point is None:
-            record('not_empty_or_request_unavailable');return True
-        if available_button(first,stop)!=point:return True
+        if not a or a != b:
+            record('contents_unverified');return True
+        if any(row[1] != 0 for row in b):
+            # A normal battle can consume the castle before the next visit.
+            record('not_empty', 60);return True
+        if point is None or available_button(first,stop) != point:
+            record('empty_request_unavailable');return True
         check_stop(stop);session.input.tap(*point,jitter=0);session._sleep(.5)
         first=session.capture.screenshot();second=session.capture.screenshot()
         dialog=request_dialog(first)
@@ -96,8 +104,9 @@ def request_if_empty(session):
         # a request whose acknowledgement was lost. Native cooldown also gates it.
         record('send_pending',1200)
         check_stop(stop);session.input.tap(*dialog['send'],jitter=0);session._sleep(1.)
-        frame=session.capture.screenshot()
-        if army_heading_visible(frame,stop) and available_button(frame,stop) is None:
+        first=session.capture.screenshot();second=session.capture.screenshot()
+        if all(army_heading_visible(frame,stop) and available_button(frame,stop) is None
+               for frame in (first,second)):
             record('sent',1200)
         else:record('send_unconfirmed',1200)
         return True
