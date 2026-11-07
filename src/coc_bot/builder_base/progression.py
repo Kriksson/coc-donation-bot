@@ -155,6 +155,26 @@ class BuilderProgressionRunner(BuilderUpgradeRunner):
                 if found and not normal:normal=found
         return normal
 
+    def _native_preview_cancel(self, frame):
+        """Recognize an inspected unpaid preview for cancellation only."""
+        if not self.reader.home(frame):
+            return None
+        height, width = frame.shape[:2]
+        bounds = (.16, .02, .85, .80)
+        variants = (
+            ('placement_cancel_native', 'placement_check_native'),
+            ('placement_cancel_dark_native', 'placement_disabled_native'),
+        )
+        for cancel_name, check_name in variants:
+            cancel = self.reader.find(frame, cancel_name, bounds, threshold=.97)
+            if cancel is None:
+                continue
+            check = self.reader.find(frame, check_name, bounds, threshold=.97)
+            if (check and .025*width <= check[0]-cancel[0] <= .045*width
+                    and abs(check[1]-cancel[1]) <= .008*height):
+                return cancel
+        return None
+
     def close(self):
         # Cancelling a known unpaid placement is safe. An uncertain payment
         # belongs to its receipt reconciler and must never be dismissed here.
@@ -164,6 +184,20 @@ class BuilderProgressionRunner(BuilderUpgradeRunner):
                 if self.stopped():return
                 self.input.tap(*placement['cancel'],jitter=0)
                 if self.wait():return
+            elif placement is None:
+                cancel = self._native_preview_cancel(frame)
+                if cancel:
+                    if self._native_preview_cancel(self.capture.screenshot()) != cancel:
+                        raise ValueError('Builder placement changed before cancellation')
+                    if self.stopped():
+                        return
+                    self.input.tap(*cancel, jitter=0)
+                    if self.wait():
+                        return
+                    after = self.capture.screenshot()
+                    if (not self.reader.home(after) or self.construction_controls(after)
+                            or self._native_preview_cancel(after)):
+                        raise ValueError('Builder placement cancellation did not verify')
         return super().close()
 
     def inspect(self,kind,frame):
