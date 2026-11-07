@@ -351,7 +351,7 @@ class AccountFleet:
                         # Repay it at idle checkpoints; never interrupt actions.
                         self.current._fleet_task_driven=state['task_driven']
                         self.current._fleet_work_order=lambda: (() if primary and not state['task_driven'] and not self._watch.funded() else
-                            visit.order() if visit else self.rotation.work_order(account['id']))
+                            visit.order(farm_first=state['task_driven']) if visit else self.rotation.work_order(account['id']))
                         if primary and not state['task_driven']:self.current._fleet_chat_seconds=self._watch.credit
                         self.current._fleet_after_step=lambda:setattr(self,'_chat_due',True)
                         self.current._fleet_work_attempted=lambda kind:self.rotation.work_attempted(account['id'],kind,self.clock())

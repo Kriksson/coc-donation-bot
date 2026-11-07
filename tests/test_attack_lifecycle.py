@@ -40,6 +40,7 @@ class PlannedLifecycleTests(TestCase):
                                          farm_calibrated=True, farm_interval_seconds=7200)
             bot._state = 'scan_chat'; bot._farm_requested = True; bot._stop_requested = False
             bot._farm_due.return_value = True
+            bot.should_stop.return_value = False
             bot.farmer = Mock(); bot.tracker = Mock(); bot.game_state = Mock(); bot.navigator = Mock()
             bot.farmer.run_one_attack.return_value = FarmResult(False, 'camera recovery failed', True)
             self.assertTrue(DonationBot._maybe_run_farm(bot))

@@ -515,6 +515,29 @@ class ExecutorTests(TestCase):
             self.assertFalse(result.success)
             session.input.tap.assert_not_called()
 
+    def test_missing_automatic_hero_skips_deployment_and_ability(self):
+        with TemporaryDirectory() as root:
+            exe, session, frame = self.executor(root, quantity=1)
+            plan = replace(exe.plan, army=exe.plan.army+(ArmyEntry('king', 'hero', 1, True),),
+                           steps=exe.plan.steps+(PlanStep('deploy_point', 'king', 1, (MapPoint(.055,.5),)),
+                                                 PlanStep('ability', 'king', 1)))
+            automatic = VerifiedExecutor(session, plan, exe.projection, frame, exe.catalog, spam=True)
+            automatic.frame, automatic.position, automatic.target = exe.frame, exe.position, exe.target
+            cards = iter((self.card(1), self.card(1), self.card(0)))
+
+            def resolve(_, unit):
+                if unit == 'king':
+                    raise ValueError('Unit is hidden or ambiguous: king')
+                return next(cards)
+
+            automatic.resolve = Mock(side_effect=resolve)
+            with patch('coc_bot.attack.executor.selected_card', return_value=True):
+                result = automatic.run()
+            self.assertTrue(result.success)
+            self.assertEqual(result.verified_taps, 1)
+            self.assertEqual(automatic.skipped_units, {'king'})
+            session.input.tap.assert_called_once_with(250, 300, jitter=0)
+
     def test_stop_after_sent_tap_prevents_next_tap(self):
         with TemporaryDirectory() as root:
             exe,session,_=self.executor(root);exe.resolve=Mock(return_value=self.card(2))

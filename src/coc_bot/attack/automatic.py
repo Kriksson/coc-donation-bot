@@ -2,7 +2,7 @@
 from dataclasses import replace
 from loguru import logger
 
-from coc_bot.attack.army import agree_cards, check_stop, read_army
+from coc_bot.attack.army import agree_cards, check_stop, read_army, ready_hero
 from coc_bot.attack.battle_gate import BattleFrameGate
 from coc_bot.attack.plans import ArmyEntry, MapPoint, PlanStep, mass_edrag_plan
 from coc_bot.attack.reinforcements import CLAN_CASTLE, SIEGE_UNITS, available_castle
@@ -34,7 +34,7 @@ def automatic_plan(cards, *, progression=False, deploy_line=None):
     army = []
     seen = set()
     for card in cards:
-        if card.kind == 'hero' and card.quantity == 0:
+        if card.kind == 'hero' and not ready_hero(card):
             continue
         if card.unit_id == CLAN_CASTLE and not available_castle(card):
             logger.info('Automatic attack: Clan Castle unavailable; continuing without reinforcements')
@@ -100,6 +100,7 @@ def scan_army(session, catalog):
     gate = BattleFrameGate(session.attack_nav.battlefield_ready)
     last_shape = None
     row = []
+    skipped_heroes = set()
 
     def page():
         nonlocal last_shape, row
@@ -119,7 +120,10 @@ def scan_army(session, catalog):
         observed = agree_cards(before, read_army(second, 'battle', catalog, stop_check=stop))
         after = []
         for card in observed:
-            if card.kind == 'hero' and card.quantity == 0:
+            if card.kind == 'hero' and not ready_hero(card):
+                if card.unit_id and card.unit_id not in skipped_heroes:
+                    logger.info('Automatic attack: skipping unverified hero {}', card.unit_id)
+                    skipped_heroes.add(card.unit_id)
                 continue
             if card.unit_id == CLAN_CASTLE and not available_castle(card):
                 continue
@@ -175,5 +179,5 @@ def scan_army(session, catalog):
         previous = cards
         cards = swipe('end')
         if same_page(previous, cards):
-            return list(inventory.values())
+            return [card for unit_id, card in inventory.items() if unit_id not in skipped_heroes]
     raise ValueError('Automatic attack skipped: could not confirm the end of the army bar')

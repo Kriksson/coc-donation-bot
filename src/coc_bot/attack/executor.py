@@ -24,6 +24,10 @@ class ReinforcementsUnavailable(ValueError):
     """Optional Castle is unavailable before a map tap, never after one."""
 
 
+class HeroUnavailable(ValueError):
+    """Automatic hero identity, availability or selection could not be verified."""
+
+
 @dataclass
 class ExecutionResult:
     success: bool
@@ -100,6 +104,7 @@ class VerifiedExecutor:
         self.skipped_units=set()
         self._deployment_observation=None
         self.spam=spam
+        self.optional_heroes = {entry.unit_id for entry in plan.army if spam and entry.kind == 'hero'}
         self.touch=None
         self._outer_probe_pending=projection.source=='registered_default_outer_ring'
         self.path=Path(journal_dir or session.config.data_dir/'debug'/'attack-executions')/(uuid.uuid4().hex+'.jsonl')
@@ -142,6 +147,8 @@ class VerifiedExecutor:
             logger.info('Hero ability skipped: {} — no usable health bar; continuing remaining steps',fields['unit_id'])
         elif event=='reinforcements_skipped':
             logger.info('Clan Castle skipped — {}; continuing the attack',fields['reason'])
+        elif event=='hero_skipped':
+            logger.info('Hero {} skipped — {}; continuing the attack',fields['unit_id'],fields['reason'])
 
     def frame(self):
         self._deployment_observation=None
@@ -176,6 +183,18 @@ class VerifiedExecutor:
     def resolve(self, frame, unit_id):
         return resolve_live_card(frame,self.catalog,unit_id,stop_check=self.stop)
 
+    def unavailable(self, unit_id, reason):
+        if unit_id == CLAN_CASTLE:
+            return ReinforcementsUnavailable(reason)
+        if unit_id in self.optional_heroes:
+            return HeroUnavailable(reason)
+        return ValueError(reason)
+
+    def skip_optional_unit(self, unit_id, exc):
+        self.skipped_units.add(unit_id)
+        event = 'hero_skipped' if isinstance(exc, HeroUnavailable) else 'reinforcements_skipped'
+        self.note(event, unit_id=unit_id, reason=str(exc))
+
     def find(self, frame, unit_id):
         """Search only inside the army bar, with bounded overlap and fresh slots."""
         for direction in (0,-1,-1,1,1,1,1):
@@ -188,8 +207,7 @@ class VerifiedExecutor:
             try:return frame,self.resolve(frame,unit_id)
             except ValueError as exc:
                 if 'hidden or ambiguous' not in str(exc): raise
-        error = ReinforcementsUnavailable if unit_id == CLAN_CASTLE else ValueError
-        raise error('Unit not found after a bounded army-bar search: '+unit_id)
+        raise self.unavailable(unit_id, 'Unit not found after a bounded army-bar search: '+unit_id)
 
     def target(self, point):
         x,y=self.projection.pixel(point)
@@ -224,9 +242,11 @@ class VerifiedExecutor:
         # Map taps and already-deployed hero abilities must never be retried here.
         for attempt in range(2):
             check_stop(self.stop)
+            if unit_id in self.optional_heroes and (card.kind != 'hero' or card.quantity != 1
+                                                    or hero_health_visible(frame, card)):
+                raise HeroUnavailable('Hero is not ready to deploy: '+unit_id)
             if card.quantity is None or card.quantity<=0:
-                error = ReinforcementsUnavailable if unit_id == CLAN_CASTLE else ValueError
-                raise error('Unit count or availability is unverified: '+unit_id)
+                raise self.unavailable(unit_id, 'Unit count or availability is unverified: '+unit_id)
             if selected_card(frame,card):return frame,card
             if card.kind in ('hero','siege') and hero_health_visible(frame,card):
                 raise ValueError('Unit is already deployed: '+unit_id)
@@ -239,18 +259,19 @@ class VerifiedExecutor:
                 try:card=self.resolve(frame,unit_id)
                 except ValueError as exc:
                     if observation==0:continue
-                    if unit_id == CLAN_CASTLE:
-                        raise ReinforcementsUnavailable(str(exc)) from exc
+                    if unit_id == CLAN_CASTLE or unit_id in self.optional_heroes:
+                        raise self.unavailable(unit_id, str(exc)) from exc
                     raise
                 confirmed=bool(selected_card(frame,card))
                 self.note('selection_observation',unit_id=unit_id,confirmed=confirmed,box=list(card.box))
+                if unit_id in self.optional_heroes and (card.kind != 'hero' or card.quantity != 1
+                                                        or hero_health_visible(frame, card)):
+                    raise HeroUnavailable('Hero is not ready to deploy: '+unit_id)
                 if card.quantity is None or card.quantity<=0:
-                    error = ReinforcementsUnavailable if unit_id == CLAN_CASTLE else ValueError
-                    raise error('Unit count or availability is unverified: '+unit_id)
+                    raise self.unavailable(unit_id, 'Unit count or availability is unverified: '+unit_id)
                 if confirmed:return frame,card
         cv2.imwrite(str(self.path.with_suffix('.selection.png')),frame)
-        error = ReinforcementsUnavailable if unit_id == CLAN_CASTLE else ValueError
-        raise error('Unit selection was not confirmed: '+unit_id)
+        raise self.unavailable(unit_id, 'Unit selection was not confirmed: '+unit_id)
 
     def deploy(self, unit_id, point):
         frame,target=self.position(point)
@@ -322,6 +343,8 @@ class VerifiedExecutor:
             _,frame,card,_=observed
         else:
             frame,card=self.find(self.frame(),unit_id)
+        if unit_id in self.optional_heroes and card.kind != 'hero':
+            raise HeroUnavailable('Hero ability identity is unverified: '+unit_id)
         if not hero_health_visible(frame,card,allow_low=True):
             # Already deployed and freshly identified, but dead/auto-triggered
             # or too uncertain to tap. Other heroes can still have abilities.
@@ -410,17 +433,19 @@ class VerifiedExecutor:
         self.note('started',plan=self.plan.to_dict())
         try:
             frame=self.frame()
-            # Re-read every used unit before the first map tap. An unavailable or
-            # hidden hero blocks here, not halfway through a dragon deployment.
+            # Re-read every used unit before the first map tap.
             for entry in self.plan.army:
                 if any(step.unit_id==entry.unit_id for step in self.plan.steps):
                     try:
                         frame,card=self.find(frame,entry.unit_id)
                         if entry.unit_id == CLAN_CASTLE and card.quantity != 1:
                             raise ReinforcementsUnavailable('No available Clan Castle troops')
-                    except ReinforcementsUnavailable as exc:
-                        self.skipped_units.add(entry.unit_id)
-                        self.note('reinforcements_skipped',reason=str(exc))
+                        if entry.unit_id in self.optional_heroes and (
+                            card.kind != 'hero' or card.quantity != 1 or hero_health_visible(frame, card)
+                        ):
+                            raise HeroUnavailable('Hero is not ready to deploy')
+                    except (ReinforcementsUnavailable, HeroUnavailable) as exc:
+                        self.skip_optional_unit(entry.unit_id, exc)
                         # find() may have scrolled the army bar; never reuse
                         # the earlier frame for the next preflight unit.
                         frame=self.frame()
@@ -446,7 +471,11 @@ class VerifiedExecutor:
                     continue
                 if step.action=='wait':
                     self._deployment_observation=None;self.session._sleep(step.seconds)
-                elif step.action=='ability': self.ability(step.unit_id)
+                elif step.action=='ability':
+                    try:
+                        self.ability(step.unit_id)
+                    except HeroUnavailable as exc:
+                        self.skip_optional_unit(step.unit_id, exc)
                 else:
                     points=step_points(step)
                     if (self.spam and self.plan.strategy in ('mass_electro_dragons','mass_dragons') and
@@ -459,13 +488,12 @@ class VerifiedExecutor:
                         for point in points:
                             try:
                                 self.deploy(step.unit_id,point)
-                            except ReinforcementsUnavailable as exc:
-                                self.skipped_units.add(step.unit_id)
-                                self.note('reinforcements_skipped',reason=str(exc))
+                            except (ReinforcementsUnavailable, HeroUnavailable) as exc:
+                                self.skip_optional_unit(step.unit_id, exc)
                                 break
             self.result.success,self.result.reason=True,'All planned deployments verified'
             if self.skipped_units:
-                self.result.reason='Available planned deployments verified; Clan Castle unavailable'
+                self.result.reason='Available planned deployments verified; skipped: '+', '.join(sorted(self.skipped_units))
                 if not self.result.verified_taps:
                     self.result.success=False
                     self.result.reason='No available units were deployed'

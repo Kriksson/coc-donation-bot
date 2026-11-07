@@ -20,6 +20,12 @@ def card(name='electro_dragon', kind='troop', quantity=11, x=100, stable=True):
 
 
 class AutomaticPlanTests(TestCase):
+    def test_unverified_hero_does_not_veto_verified_troops(self):
+        for progression in (False, True):
+            plan = automatic_plan([card(), card('king', 'hero', 1, stable=False),
+                                   card('queen', 'hero', 1)], progression=progression)
+            self.assertEqual([e.unit_id for e in plan.army], ['electro_dragon', 'queen'])
+
     def test_generates_current_counts_without_human_confirmation(self):
         cards = [card(), card('rage_spell','spell',5,250),
                  card('flame_flinger','siege',1,400), card('king_skin','hero',1,550)]
@@ -63,6 +69,17 @@ class AutomaticPlanTests(TestCase):
 
 
 class AutomaticScanTests(TestCase):
+    def test_hero_that_changes_between_frames_is_omitted(self):
+        session, catalog = self.session(), Mock()
+        king = card('king', 'hero', 1, 250)
+        with patch('coc_bot.attack.automatic.BattleFrameGate'), \
+                patch('coc_bot.attack.automatic.read_army', side_effect=[
+                    [card(), king], [card(), replace(king, quantity=None)],
+                    [card(), king], [card(), king], [card(), king], [card(), king],
+                    [card(), king], [card(), king]]):
+            self.assertEqual([c.unit_id for c in scan_army(session, catalog)], ['electro_dragon'])
+        session.input.tap.assert_not_called()
+
     def session(self):
         s = Mock()
         s.client.stop_check = lambda:False

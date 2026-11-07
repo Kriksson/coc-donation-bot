@@ -175,6 +175,35 @@ class UpdatedMenuTests(unittest.TestCase):
             self.assertFalse(nav.wait_for_battle(timeout=0))
         nav.input.tap.assert_not_called()
 
+    def test_verified_home_retries_matchmaking_only_once(self):
+        nav = self.navigator(True)
+        nav.classify = MagicMock(return_value=ScreenType.HOME)
+        nav.battlefield_ready = MagicMock(return_value=False)
+        nav._attack_chip_on_home = MagicMock(return_value=True)
+        nav.open_attack_menu = MagicMock(return_value=True)
+        nav.start_unranked_battle = MagicMock(return_value=True)
+        nav._save_matchmaking_frame = MagicMock()
+        with patch('coc_bot.vision.battle_menu.army_confirmation_button', return_value=None), \
+                patch('coc_bot.vision.battle_menu.home_build_control_visible', return_value=True), \
+                patch.object(nav.classifier, 'find_reload_game_button', return_value=None):
+            self.assertFalse(nav.wait_for_battle(timeout=30))
+        nav.open_attack_menu.assert_called_once_with()
+        nav.start_unranked_battle.assert_called_once_with()
+        nav.input.tap.assert_not_called()
+
+    def test_home_classification_without_build_control_does_not_restart_search(self):
+        nav = self.navigator(True)
+        nav.classify = MagicMock(return_value=ScreenType.HOME)
+        nav.battlefield_ready = MagicMock(side_effect=[False, False, True])
+        nav._attack_chip_on_home = MagicMock(return_value=True)
+        nav.open_attack_menu = MagicMock()
+        nav.classifier._looks_like_battle_results = MagicMock(return_value=False)
+        with patch('coc_bot.vision.battle_menu.army_confirmation_button', return_value=None), \
+                patch('coc_bot.vision.battle_menu.home_build_control_visible', return_value=False), \
+                patch.object(nav.classifier, 'find_reload_game_button', return_value=None):
+            self.assertTrue(nav.wait_for_battle(timeout=30))
+        nav.open_attack_menu.assert_not_called()
+
     def reward_frame(self):
         frame=self.frame()
         frame[:]=(40,90,150)

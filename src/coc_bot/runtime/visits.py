@@ -33,7 +33,7 @@ class Visit:
         return state or {'version': VERSION, 'account': self.config.account_tag, 'step': 0,
                          'started_at': self.clock(), 'outcomes': {}, 'deferred': {}}
 
-    def order(self):
+    def order(self, *, farm_first=False):
         state = self.load()
         if 'finished_at' in state:
             if self.clock() < state.get('next_check_at', 0):return ()
@@ -43,7 +43,7 @@ class Visit:
         index = state['step']
         # Put idle builders/lab/pets to work before a potentially long refill.
         # Keep v1 step indexes intact, including already saved visits.
-        if index == 0 and not state.get('maintenance_checked') and any(
+        if index == 0 and not farm_first and not state.get('maintenance_checked') and any(
             getattr(self.config, key, False) for key in
             ('upgrade_buildings_enabled','upgrade_research_enabled','upgrade_pets_enabled')):
             return ('upgrades',)

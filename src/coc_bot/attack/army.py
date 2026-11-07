@@ -507,6 +507,10 @@ def resolve_just_depleted(frame, catalog, before, *, stop_check=None, spent=1):
     return replace(before,quantity=0,quantity_source='verified depleted artwork')
 
 
+def ready_hero(card):
+    return card.stable and bool(card.unit_id) and type(card.quantity) is int and card.quantity == 1
+
+
 def agree_cards(first, second):
     """Require repeated identity/count and position agreement; never auto-confirm."""
     result = []

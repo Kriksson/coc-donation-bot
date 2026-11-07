@@ -57,6 +57,8 @@ def research_priority(unit):
 
 
 def farming_plan(cards, *, deploy_line=None):
+    from coc_bot.attack.army import ready_hero
+
     troops = [c for c in cards if c.kind == 'troop']
     if not troops or any(c.unit_id not in TROOPS or not c.stable or type(c.quantity) is not int
                          or not 1 <= c.quantity <= 352 for c in troops):
@@ -84,7 +86,7 @@ def farming_plan(cards, *, deploy_line=None):
             steps.append(PlanStep('wait', seconds=1))
     extra = []
     for card in cards:
-        if card.kind == 'hero' and card.quantity == 0:
+        if card.kind == 'hero' and not ready_hero(card):
             continue
         if card.unit_id == CLAN_CASTLE and not available_castle(card):
             continue

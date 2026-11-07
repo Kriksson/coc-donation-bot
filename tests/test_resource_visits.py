@@ -64,6 +64,14 @@ class VisitTests(unittest.TestCase):
             self.assertEqual(self.visit.order(),('farm',))
         self.visit.finish_step('farm');self.assertEqual(self.visit.order(),('requests',))
 
+    def test_farm_first_keeps_the_rest_of_the_saved_checklist(self):
+        self.config.upgrade_buildings_enabled = True
+        self.assertEqual(self.visit.order(), ('upgrades',))
+        self.assertEqual(self.visit.order(farm_first=True), ('farm',))
+        for step in ('farm', 'requests'):
+            self.visit.finish_step(step)
+        self.assertEqual(self.visit.order(farm_first=True), ('upgrades',))
+
     def test_full_checklist_and_disabled_steps_finish_before_visit_ends(self):
         for step in STEPS:
             self.assertFalse(self.visit.complete());self.assertEqual(self.visit.order(),(step,))

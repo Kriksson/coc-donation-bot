@@ -471,21 +471,26 @@ class AttackNavigator:
         return battlefield_ready(frame, stop_check=self.stop_check)
 
     def wait_for_battle(self, timeout: float | None = None) -> bool:
+        from coc_bot.vision.battle_menu import army_confirmation_button, home_build_control_visible
+
         timeout = timeout if timeout is not None else float(self.config.farm_match_timeout_seconds)
-        deadline = time.time() + timeout
+        deadline = time.monotonic() + timeout
         last_screen = "unknown"
         army_taps = 0
         last_army_tap = 0.0
-        while time.time() < deadline:
+        home_frames = 0
+        retried = False
+        saved_popup = False
+        while time.monotonic() < deadline:
             if self._stopping():
                 logger.info("wait_for_battle: stop requested — aborting")
                 return False
             frame = self.capture.screenshot()
-            from coc_bot.vision.battle_menu import army_confirmation_button
             army_button = army_confirmation_button(frame, stop_check=self.stop_check)
             if self._stopping():
                 return False
             if army_button is not None:
+                home_frames = 0
                 if army_taps < 2 and time.monotonic() - last_army_tap >= 5:
                     logger.info("Army confirmation verified — tapping Attack! at {}", army_button)
                     self.input.tap(*army_button, jitter=0)
@@ -497,6 +502,7 @@ class AttackNavigator:
             screen = self.classify(frame, mode=BotMode.ATTACK)
             last_screen = screen.value
             if self.classifier.find_reload_game_button(frame) is not None:
+                self._save_matchmaking_frame(frame, 'reload')
                 if self.donation_nav is not None:
                     self.donation_nav._dismiss_popup(frame)
                 # A disconnected matchmaking attempt is not a deployable opponent.
@@ -504,6 +510,29 @@ class AttackNavigator:
             if self.battlefield_ready(frame):
                 logger.info("Battlefield verified: independent combat controls visible (screen={})", screen.value)
                 return True
+            # The Attack chip alone can false-match the battlefield. Only two
+            # consecutive village frames with the independent Build control
+            # permit restarting a search that has returned to Home.
+            if screen == ScreenType.HOME and self._attack_chip_on_home(frame) and home_build_control_visible(frame):
+                home_frames += 1
+            else:
+                home_frames = 0
+            if home_frames >= 2:
+                self._save_matchmaking_frame(frame, 'returned-home')
+                if self._stopping() or retried or deadline - time.monotonic() < 15:
+                    logger.warning('Matchmaking ended at verified Home without an opponent')
+                    return False
+                logger.warning('Matchmaking returned to verified Home — retrying once')
+                retried = True
+                if not self.open_attack_menu() or not self.start_unranked_battle():
+                    return False
+                home_frames = army_taps = 0
+                last_army_tap = 0.0
+                continue
+            if home_frames:
+                if self._sleep(.6):
+                    return False
+                continue
             if screen == ScreenType.MATCHMAKING:
                 logger.debug("wait_for_battle: still searching (matchmaking)")
                 if self._sleep(0.6):
@@ -530,6 +559,9 @@ class AttackNavigator:
             # A broad Attack-chip color match also fires on opponent scenery.
             # Wait through uncertain frames; only the positive battle gate can deploy.
             if screen == ScreenType.POPUP and self.donation_nav is not None:
+                if not saved_popup:
+                    self._save_matchmaking_frame(frame, 'popup')
+                    saved_popup = True
                 self.donation_nav._dismiss_popup(frame)  # noqa: SLF001
             logger.debug("wait_for_battle: screen={}", screen.value)
             if self._sleep(0.6):
@@ -542,7 +574,18 @@ class AttackNavigator:
         if not self._stopping() and self.battlefield_ready(frame):
             logger.info("Battle field ready on final check")
             return True
+        self._save_matchmaking_frame(frame, 'timeout')
         return False
+
+    def _save_matchmaking_frame(self, frame, reason):
+        try:
+            folder = self.config.data_dir / 'debug'
+            folder.mkdir(parents=True, exist_ok=True)
+            path = folder / f'matchmaking-{reason}.png'
+            if cv2.imwrite(str(path), frame):
+                logger.info('Matchmaking diagnostic saved: {}', path)
+        except (OSError, cv2.error) as exc:
+            logger.debug('Could not save matchmaking diagnostic: {}', exc)
 
     def wait_for_battle_end(
         self,
