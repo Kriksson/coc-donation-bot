@@ -109,6 +109,42 @@ class CastleRecognitionTests(TestCase):
             cards = read_army(np.zeros_like(self.frame),'battle',catalog)
         self.assertIsNone(cards[0].quantity)
 
+    def test_native_siege_selector_castle_reaches_the_farming_plan(self):
+        frame = battle('clan-castle-toggle-bar')
+        observed = agree_cards(read_army(frame,'battle',self.catalog),
+                               read_army(frame,'battle',self.catalog))
+        castles = [c for c in observed if c.unit_id == CLAN_CASTLE]
+        self.assertEqual(len(castles),1)
+        self.assertEqual((castles[0].quantity,castles[0].stable),(1,True))
+        for progression in (False,True):
+            plan = automatic_plan([troop(),*castles],progression=progression)
+            drops = [s for s in plan.steps if s.unit_id == CLAN_CASTLE]
+            self.assertEqual([(s.action,s.quantity) for s in drops],[('deploy_point',1)])
+        for x,y,w,h in card_boxes(frame,'battle'):
+            if x == castles[0].box[0]:continue
+            self.assertIsNone(castle_card_quantity(frame[y:y+h,x:x+w]))
+        for scale in (.65,.8,1.,1.3):
+            with self.subTest(scale=scale):
+                live = resolve_live_card(cv2.resize(frame,None,fx=scale,fy=scale),
+                                         self.catalog,CLAN_CASTLE)
+                self.assertEqual(live.quantity,1)
+
+    def test_siege_selector_does_not_prove_availability_or_clan_identity(self):
+        cell = battle('clan-castle-toggle-bar')[860:1030,287:418].copy()
+        from coc_bot.attack.reinforcements import badge_reference
+        _,mask = badge_reference('image_toggle')
+        changed = cell.copy()
+        changed[39:118,24:104][mask==0] = (30,180,20)
+        self.assertEqual(castle_card_quantity(changed),1)
+        depleted = darkened(cell)
+        # The selector can stay colored after the shield itself is unavailable.
+        depleted[116:,51:] = cell[116:,51:]
+        self.assertEqual(castle_card_quantity(depleted),0)
+        for box in ((39,118,24,104),(20,37,20,111),(131,150,20,39)):
+            top,bottom,left,right=box
+            covered=cell.copy();covered[top:bottom,left:right]=0
+            self.assertIsNone(castle_card_quantity(covered))
+
 
 class CastlePlanTests(TestCase):
     def test_all_farming_families_deploy_once_before_heroes(self):
@@ -151,10 +187,10 @@ class CastlePlanTests(TestCase):
 
 
 class CastleExecutorTests(TestCase):
-    def executor(self, root):
+    def executor(self, root, name='clan-castle-bar'):
         session=Mock();session.config=SimpleNamespace(data_dir=Path(root),adb_device='test')
         session.client.stop_check=lambda:False
-        frame=battle()
+        frame=battle(name)
         plan=automatic_plan([troop(quantity=1),castle()])
         # Map onto a safe visible portion of a synthetic measured battlefield.
         projection=Projection(((900,50),(1500,400),(900,750),(300,400)))
@@ -163,6 +199,26 @@ class CastleExecutorTests(TestCase):
         exe.position=Mock(return_value=(frame,(400,400)))
         exe.target=Mock(return_value=(400,400))
         return exe,session,frame
+
+    def test_selector_variant_requires_native_depletion_after_one_map_tap(self):
+        for consumed in (False,True):
+            with self.subTest(consumed=consumed),TemporaryDirectory() as root:
+                exe,session,frame=self.executor(root,'clan-castle-toggle-bar')
+                exe.plan=AttackPlan((ArmyEntry(CLAN_CASTLE,'siege',1,True),),
+                    (PlanStep('deploy_point',CLAN_CASTLE,1,(MapPoint(.055,.5),)),))
+                after=frame.copy()
+                if consumed:
+                    cell=frame[860:1030,287:418]
+                    depleted=darkened(cell)
+                    depleted[116:,51:]=cell[116:,51:]
+                    after[860:1030,287:418]=depleted
+                exe.frame=Mock(side_effect=[frame,after,after])
+                with patch('coc_bot.attack.executor.selected_card',return_value=True):
+                    result=exe.run()
+                session.input.tap.assert_called_once_with(400,400,jitter=0)
+                self.assertEqual(result.success,consumed)
+                self.assertEqual(result.verified_taps,int(consumed))
+                self.assertEqual(result.uncertain_tap,not consumed)
 
     def test_available_castle_is_tapped_once_and_requires_depletion(self):
         for after in (0,1):
