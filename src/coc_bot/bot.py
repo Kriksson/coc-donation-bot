@@ -401,7 +401,8 @@ class DonationBot:
             # due farm attacks. LayoutRunner is bounded, and its existing fresh
             # donation-request check still gives visible requests priority.
             order=('layouts',)+tuple(name for name in order if name!='layouts')
-        if layout.get('pending') or layout.get('last_survey',{}).get('payment'):
+        layout_pending = layout.get('pending') or layout.get('last_survey', {}).get('payment')
+        if layout_pending:
             order=('layouts',)
         # An explicit Farm now request keeps its usual priority over scheduled
         # work. Each method still enforces its own permissions and due time.
@@ -412,6 +413,18 @@ class DonationBot:
             # A saved payment outcome must be resolved before another feature
             # can leave this village, including a rotated/manual farm turn.
             order=('upgrades',)
+        # Long maintenance passes can consume a whole visit before the saved
+        # checklist reaches requests. Check once before other scheduled work.
+        if (visit and order and self._state in ('scan_chat', 'scroll_chat')
+                and getattr(self, '_fleet_task_driven', False) and not self._farm_requested
+                and not getattr(self, '_visit_request_checked', False)
+                and not (layout_pending or upgrade_pending)):
+            self._visit_request_checked = True
+            if order[0] != 'requests' and self._maybe_request_reinforcements():
+                self._visit_chat_pending = True
+                getattr(self, '_fleet_after_step', lambda: None)()
+                self.tracker.tick()
+                return
         for name in order:
             if self.should_stop():return
             self._visit_repeat=False;self._visit_reason=None;self._visit_retry_at=None

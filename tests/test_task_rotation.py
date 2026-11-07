@@ -149,3 +149,32 @@ class TaskRotationTests(TestCase):
         bot._do_donate=Mock(side_effect=lambda:setattr(bot,'_state','scan_chat'))
         bot._loop_tick()
         bot._do_donate.assert_called_once();self.assertFalse(bot._visit_chat_pending)
+
+    def test_visit_checks_castle_before_maintenance_without_advancing_checklist(self):
+        bot = DonationBot.__new__(DonationBot)
+        bot._stop_requested = False
+        bot._farm_requested = False
+        bot._state = 'scan_chat'
+        bot._fleet_task_driven = True
+        bot._visit = Mock()
+        bot._visit.deferred.return_value = None
+        bot._fleet_work_order = lambda: ('upgrades',)
+        bot.config = SimpleNamespace(data_dir=Path(self.store.root) / 'empty', donation_enabled=False)
+        bot.should_stop = lambda: False
+        bot._settings_stop_ready = lambda: False
+        bot._check_watchdog = Mock()
+        bot._maybe_anti_idle = Mock()
+        bot.tracker = Mock()
+        bot.capture = Mock()
+        bot.nav_input = Mock()
+        bot.navigator = Mock()
+        bot._maybe_request_reinforcements = Mock(return_value=True)
+        bot._maybe_run_upgrades = Mock(return_value=True)
+        with patch('coc_bot.upgrades.runner.UpgradeRunner.state', return_value={}):
+            bot._loop_tick()
+            bot._maybe_request_reinforcements.assert_called_once()
+            bot._maybe_run_upgrades.assert_not_called()
+            bot._visit.finish_step.assert_not_called()
+            bot._loop_tick()
+            bot._maybe_request_reinforcements.assert_called_once()
+            bot._maybe_run_upgrades.assert_called_once()
