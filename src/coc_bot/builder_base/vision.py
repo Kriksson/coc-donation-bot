@@ -211,6 +211,12 @@ class BuilderReader(UpgradeReader):
         return result
 
     def detail_close(self, frame):
+        # The running research modal has a wider title and its X sits farther
+        # left than the confirmation panel. Require both native landmarks.
+        if self.find(frame, 'research_units_native_title', (.38, .03, .64, .11), threshold=.97):
+            point = self.find(frame, 'research_units_native_close', (.79, .02, .87, .12), threshold=.97)
+            if point:
+                return point
         title = compact(self.label(frame, (.30, .035, .72, .09)))
         # The native outlined 5 can read as S. This correction locates only
         # the non-spending close control; independent payment checks remain.
