@@ -183,6 +183,28 @@ class ProgressionPolicyTests(TestCase):
                 prep.observe.assert_called_once();prep.unlocked.assert_not_called();prep.adjust.assert_not_called()
                 self.assertEqual(json.loads((Path(folder)/'progression/army.json').read_text())['troops'],{'electro_dragon':11})
 
+    def test_verified_th10_prepares_owned_dragons_without_opening_buildings(self):
+        from coc_bot.progression.preparation import ArmyPreparation
+        from coc_bot.accounts.store import selected_account
+        with tempfile.TemporaryDirectory() as folder:
+            prep = ArmyPreparation.__new__(ArmyPreparation)
+            prep.s = SimpleNamespace(config=SimpleNamespace(data_dir=Path(folder), account_tag='#PYLQG',
+                                                             account_town_hall=10))
+            prep.catalog = SimpleNamespace()
+            prep.army_hall = Mock(side_effect=ValueError('Current Town Hall level badge could not be verified'))
+            prep.open, prep.close, prep.unlocked, prep.adjust = Mock(), Mock(), Mock(), Mock()
+            dragon = ArmyCard('0', (100,280,100,150), 'dragon', 'troop', 12, stable=True)
+            prep.observe = Mock(return_value=(None, [dragon], (240,240)))
+            token = selected_account.set({'tag':'#PYLQG', 'town_hall':10})
+            try:
+                self.assertEqual(prep._prepare().prepared_hall, 10)
+            finally:
+                selected_account.reset(token)
+            prep.army_hall.assert_not_called()
+            prep.observe.assert_called_once()
+            prep.unlocked.assert_not_called()
+            prep.adjust.assert_not_called()
+
     def test_wall_queue_confirmation_checks_two_frames_without_repaying(self):
         from coc_bot.progression.walls import WallUpgrade
         row={'name':'Wall','cost':1000,'currency':'gold','target_level':2,'quantity':24}

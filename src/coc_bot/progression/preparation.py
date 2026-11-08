@@ -514,13 +514,12 @@ class ArmyPreparation:
         logger.info('Preparing farming army from current unlocks and camp space')
         from coc_bot.accounts.store import selected_account
         account=selected_account.get();known=getattr(self.s.config,'account_town_hall',None)
-        # A matching verified account's TH11+ is an eligibility floor for this
-        # one army family. Fresh owned troops/picker unlocks and camp capacity
-        # still decide what can be trained. This never authorizes upgrade spending.
+        # A verified account's saved air-army tier selects a preferred family.
+        # Fresh owned troops/picker unlocks and capacity still decide the army.
         hint=(account is not None and account.get('tag')==getattr(self.s.config,'account_tag',None)
-              and type(known) is int and 11<=known<=18 and account.get('town_hall')==known)
+              and type(known) is int and 7<=known<=18 and account.get('town_hall')==known)
         hall=known if hint else self.army_hall()
-        self.preferred_unit='electro_dragon' if hall>=11 else None
+        self.preferred_unit='electro_dragon' if hall>=11 else 'dragon' if hall>=7 else None
         self.open()
         try:frame,cards,space=self.observe()
         except ValueError as exc:
@@ -534,7 +533,8 @@ class ArmyPreparation:
             # (at least level one). Exact troop levels are not needed to choose
             # mass Electro Dragons, and existing quantities need no picker scan.
             unlocked={self.preferred_unit:{'level':1,'point':None}}
-            logger.info('Using verified Electro Dragon army and current camp capacity; skipping troop descriptions')
+            logger.info('Using verified {} army and current camp capacity; skipping troop descriptions',
+                        self.preferred_unit.replace('_', ' '))
         else:unlocked=self.unlocked(frame,cards)
         desired=composition(hall,space[1],{u:v['level'] for u,v in unlocked.items()})
         counts={c.unit_id:c.quantity for c in cards}
