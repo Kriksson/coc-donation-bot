@@ -73,8 +73,8 @@ def active_battle_ready(frame, *, stop_check=None, timer_confirmed=False):
     # heading. The independent damage label still needs fresh recognition.
     if not timer_confirmed:
         timer = _white_label(frame, (.45,.02,.55,.047), stop_check)
-        # Observed outlined-font errors: an extra b beside "tt", and n split as fi.
-        if not re.search(r'battb?lee(?:n|fi)dsi+n', timer):
+        # The outlined second t can be read as b; n can split as fi.
+        if not re.search(r'ba(?:ttb?|tb)lee(?:n|fi)dsi+n', timer):
             return False
     damage = _white_label(frame, (.83,.695,.985,.73), stop_check)
     # The outlined O sometimes reads as q against green scenery. The entire

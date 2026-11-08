@@ -23,6 +23,11 @@ class UpdatedMenuTests(unittest.TestCase):
                 patch('coc_bot.attack.star_finish._white_label', return_value='surrender'):
             self.assertIsNone(starred_end_button(frame))
 
+    def test_active_timer_accepts_the_native_outline_ocr_variant(self):
+        from coc_bot.vision.battle_menu import active_battle_ready
+        with patch('coc_bot.vision.battle_menu._white_label', side_effect=['batbleendsin','overalldamage']):
+            self.assertTrue(active_battle_ready(self.frame()))
+
     def test_early_finish_never_taps_an_unverified_confirmation_twice(self):
         from coc_bot.attack.star_finish import finish_star_battle
 
