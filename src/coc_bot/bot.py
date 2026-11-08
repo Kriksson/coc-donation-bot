@@ -775,9 +775,11 @@ class DonationBot:
         if not manual and not self.config.farm_enabled:
             return False
 
-        # A refill can repeat for several battles before the visit reaches its
-        # ordinary request step. Give an empty castle a chance before matching.
-        self._maybe_request_reinforcements()
+        # Automatic progression checks the Castle inside its already open
+        # army editor. Other engines still need a separate check before play.
+        if not (getattr(self.config, 'farm_engine', '') == 'automatic'
+                and getattr(self.config, 'progression_enabled', False)):
+            self._maybe_request_reinforcements()
         if self.should_stop():
             return False
 

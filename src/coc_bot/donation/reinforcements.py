@@ -66,7 +66,8 @@ def eligible(config):
                 (getattr(config,'account_town_hall',0) or 0)>=3 and not config.dry_run)
 
 
-def request_if_empty(session):
+def request_if_empty(session, *, open_army_frame=None):
+    """Check a fresh My Army view, optionally owned by army preparation."""
     config=session.config
     if not eligible(config):return False
     path=config.data_dir/'reinforcements/state.json'
@@ -80,10 +81,10 @@ def request_if_empty(session):
             logger.info('Clan Castle request: account={} outcome={} seconds={:.2f}',
                         config.account_tag, status, time.monotonic()-started)
     record('checking')
-    prep=ArmyPreparation(session)
+    prep=ArmyPreparation(session) if open_army_frame is None else None
     stop=session.client.stop_check
     try:
-        first=prep.open(require_capacity=False)
+        first=prep.open(require_capacity=False) if prep is not None else open_army_frame
         check_stop(stop)
         second=session.capture.screenshot()
         a,b=castle_contents(first,stop),castle_contents(second,stop)
@@ -115,4 +116,5 @@ def request_if_empty(session):
             frame=session.capture.screenshot();dialog=request_dialog(frame)
             if dialog and dialog==request_dialog(session.capture.screenshot()):
                 check_stop(stop);session.input.tap(*dialog['cancel'],jitter=0);session._sleep(.5)
-            prep.close()
+            if prep is not None:
+                prep.close()

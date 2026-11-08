@@ -163,7 +163,7 @@ def run_planned_attack(farmer, *, automatic=False):
         from coc_bot.progression.preparation import ArmyPreparation
         try:
             preparation = ArmyPreparation(session)
-            prepared_catalog = preparation.prepare(keep_match_menu=True)
+            prepared_catalog = preparation.prepare(for_attack=True)
             match_home = preparation.match_home
         except ValueError as exc:
             return FarmResult(False,'Army preparation: '+str(exc))

@@ -492,9 +492,9 @@ class ArmyPreparation:
         from coc_bot.progression.home import ensure_home
         if not ensure_home(self.s.navigator):raise ValueError('Could not confirm home after army preparation')
 
-    def prepare(self, *, keep_match_menu=False):
+    def prepare(self, *, for_attack=False):
         try:
-            return self._prepare(keep_match_menu=True) if keep_match_menu else self._prepare()
+            return self._prepare(for_attack=True) if for_attack else self._prepare()
         except Exception:
             if isinstance(getattr(self,'last_frame',None),np.ndarray):
                 try:
@@ -522,7 +522,7 @@ class ArmyPreparation:
             logger.info('Town Hall upgrade row unavailable; using verified account TH{} for army choice only',known)
             return known
 
-    def _prepare(self, *, keep_match_menu=False):
+    def _prepare(self, *, for_attack=False):
         logger.info('Preparing farming army from current unlocks and camp space')
         from coc_bot.accounts.store import selected_account
         account=selected_account.get();known=getattr(self.s.config,'account_town_hall',None)
@@ -533,8 +533,15 @@ class ArmyPreparation:
         hall=known if hint else self.army_hall()
         self.preferred_unit='electro_dragon' if hall>=11 else 'dragon' if hall>=7 else None
         self.match_home = None
-        if keep_match_menu:
-            self.open(remember_match_home=True)
+        if for_attack:
+            army = self.open(remember_match_home=True)
+            from coc_bot.donation.reinforcements import eligible, request_if_empty
+            from coc_bot.runtime.task_timing import measure_task
+
+            if eligible(self.s.config):
+                with measure_task(self.s.config.account_tag, 'castle_request') as timing:
+                    checked = request_if_empty(self.s, open_army_frame=army)
+                    timing['outcome'] = 'checked' if checked else 'cooldown'
         else:
             self.open()
         try:frame,cards,space=self.observe()

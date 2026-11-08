@@ -95,6 +95,25 @@ class RequestVisionTests(unittest.TestCase):
 
 
 class RequestTransactionTests(unittest.TestCase):
+    def test_open_army_check_uses_fresh_confirmation_without_reopening_editor(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config = SimpleNamespace(data_dir=Path(tmp), account_tag='#ABC',
+                                     account_town_hall=10, dry_run=False)
+            session = SimpleNamespace(config=config, client=SimpleNamespace(stop_check=lambda: False),
+                                      capture=Mock(), input=Mock())
+            first, fresh = object(), object()
+            session.capture.screenshot.return_value = fresh
+            with patch('coc_bot.donation.reinforcements.ArmyPreparation') as prep, \
+                 patch('coc_bot.donation.reinforcements.castle_contents',
+                       side_effect=[(('troop', 0, 35),), (('troop', 1, 35),)]) as contents, \
+                 patch('coc_bot.donation.reinforcements.available_button', return_value=(1, 2)), \
+                 patch('coc_bot.donation.reinforcements.request_dialog', return_value=None):
+                self.assertTrue(request_if_empty(session, open_army_frame=first))
+            prep.assert_not_called()
+            self.assertEqual(contents.call_args_list,
+                             [call(first, session.client.stop_check), call(fresh, session.client.stop_check)])
+            session.input.tap.assert_not_called()
+
     def test_durable_send_and_cooldown_prevent_duplicate_requests(self):
         with tempfile.TemporaryDirectory() as tmp:
             config=SimpleNamespace(data_dir=Path(tmp),account_tag='#ABC',account_roles=('farming',),
