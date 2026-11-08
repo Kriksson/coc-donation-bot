@@ -16,7 +16,7 @@ from coc_bot.progression.troop_info import read_info,info_point,load_references,
 from coc_bot.upgrades.vision import text, compact, crop
 from coc_bot.upgrades.runner import write_json
 from coc_bot.upgrades.scroll import menu_list_unchanged
-from coc_bot.vision.battle_menu import _white_label, direct_match_button
+from coc_bot.vision.battle_menu import _white_label, direct_match_button, home_build_control_visible
 
 
 @lru_cache(maxsize=1)
@@ -321,9 +321,17 @@ class ArmyPreparation:
             if close:self.tap(close)
             r.close()
 
-    def open(self, *, require_capacity=True):
+    def open(self, *, require_capacity=True, remember_match_home=False):
         visible=army_page if require_capacity else army_heading_visible
-        if not self.s.attack_nav.leave_chat_for_home() or not self.s.attack_nav.open_attack_menu():
+        if not self.s.attack_nav.leave_chat_for_home():
+            raise ValueError('Could not open the farming army menu')
+        if remember_match_home:
+            frame = self.frame()
+            classifier = self.s.attack_nav.classifier
+            if (home_build_control_visible(frame) and not classifier.looks_like_blocking_popup(frame)
+                    and not classifier._clan_chat_anchor_visible(frame)):
+                self.match_home = frame
+        if not self.s.attack_nav.open_attack_menu():
             raise ValueError('Could not open the farming army menu')
         frame=self.frame()
         from coc_bot.progression.home import recover_home_overlay
@@ -458,7 +466,7 @@ class ArmyPreparation:
             if preferred and first['unit_id']==preferred:return frame
         return frame
 
-    def close(self):
+    def close(self, *, keep_match_menu=False):
         frame=self.frame()
         info=read_info(frame,self.stop)
         if info is not None:
@@ -475,14 +483,18 @@ class ArmyPreparation:
                 raise ValueError('My Army close control changed')
             self.tap(point)
             frame=self.frame()
-        if direct_match_button(frame,stop_check=self.stop):
+        match = direct_match_button(frame, stop_check=self.stop)
+        if match and keep_match_menu:
+            logger.info('Army prepared — retaining the verified Find a Match menu')
+            return True
+        if match:
             self.tap((round(frame.shape[1]*.80),round(frame.shape[0]*.60)))
         from coc_bot.progression.home import ensure_home
         if not ensure_home(self.s.navigator):raise ValueError('Could not confirm home after army preparation')
 
-    def prepare(self):
+    def prepare(self, *, keep_match_menu=False):
         try:
-            return self._prepare()
+            return self._prepare(keep_match_menu=True) if keep_match_menu else self._prepare()
         except Exception:
             if isinstance(getattr(self,'last_frame',None),np.ndarray):
                 try:
@@ -510,7 +522,7 @@ class ArmyPreparation:
             logger.info('Town Hall upgrade row unavailable; using verified account TH{} for army choice only',known)
             return known
 
-    def _prepare(self):
+    def _prepare(self, *, keep_match_menu=False):
         logger.info('Preparing farming army from current unlocks and camp space')
         from coc_bot.accounts.store import selected_account
         account=selected_account.get();known=getattr(self.s.config,'account_town_hall',None)
@@ -520,7 +532,11 @@ class ArmyPreparation:
               and type(known) is int and 7<=known<=18 and account.get('town_hall')==known)
         hall=known if hint else self.army_hall()
         self.preferred_unit='electro_dragon' if hall>=11 else 'dragon' if hall>=7 else None
-        self.open()
+        self.match_home = None
+        if keep_match_menu:
+            self.open(remember_match_home=True)
+        else:
+            self.open()
         try:frame,cards,space=self.observe()
         except ValueError as exc:
             if str(exc)!='Army cards do not match occupied camp space':raise
@@ -559,7 +575,10 @@ class ArmyPreparation:
             frame,cards,space=self.observe()
             if {c.unit_id:c.quantity for c in cards}!=desired:
                 raise ValueError('Prepared army does not match the farming composition')
-        self.close()
+        if self.match_home is None:
+            self.close()
+        elif not self.close(keep_match_menu=True):
+            self.match_home = None
         write_json(self.s.config.data_dir/'progression/army.json',{'hall':hall,'capacity':space[1],
                    'troops':desired,'unlocks':{u:v['level'] for u,v in unlocked.items()},'at':time.time()})
         logger.info('Farming army ready: TH{}, {} space, {}',hall,space[1],desired)

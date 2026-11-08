@@ -443,7 +443,7 @@ class AttackNavigator:
             return None
         return fresh
 
-    def start_unranked_battle(self) -> bool:
+    def start_unranked_battle(self, *, require_direct: bool = False) -> bool:
         """Open unranked, then confirm the visible army page before search."""
         if self._stopping():
             return False
@@ -453,6 +453,9 @@ class AttackNavigator:
             logger.info("Unranked Find a Match — opening army confirmation")
             self.input.tap(*direct, jitter=0)
             return not self._sleep(1.0)
+        if require_direct:
+            logger.warning("Retained Find a Match control is no longer verified")
+            return False
         if not self._tap_named("unranked_battle", frame):
             return False
         if self._sleep(1.0):

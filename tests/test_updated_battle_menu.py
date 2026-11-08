@@ -76,6 +76,37 @@ class UpdatedMenuTests(unittest.TestCase):
         self.assertLess(abs(x-159),2)
         self.assertLess(abs(y-388),2)
 
+    def test_retained_match_menu_never_falls_back_to_a_calibrated_tap(self):
+        nav = self.navigator()
+        nav.classifier.find_direct_match_button = MagicMock(return_value=None)
+        nav._tap_named = MagicMock()
+        self.assertFalse(nav.start_unranked_battle(require_direct=True))
+        nav._tap_named.assert_not_called()
+        nav.input.tap.assert_not_called()
+        nav.classifier.find_direct_match_button.return_value = (318, 775)
+        self.assertTrue(nav.start_unranked_battle(require_direct=True))
+        nav.input.tap.assert_called_once_with(318, 775, jitter=0)
+
+    def test_army_close_retains_verified_menu_or_checks_home(self):
+        from coc_bot.progression.preparation import ArmyPreparation
+
+        prep = ArmyPreparation.__new__(ArmyPreparation)
+        prep.stop = None
+        prep.s = MagicMock()
+        prep.tap = MagicMock()
+        prep.frame = MagicMock(return_value=self.frame())
+        with patch('coc_bot.progression.preparation.read_info', return_value=None), \
+             patch('coc_bot.progression.preparation.picker_editor_visible', return_value=False), \
+             patch('coc_bot.progression.preparation.army_editor_close_button', return_value=None), \
+             patch('coc_bot.progression.preparation.direct_match_button', return_value=(318, 775)) as match, \
+             patch('coc_bot.progression.home.ensure_home', return_value=True) as home:
+            self.assertTrue(prep.close(keep_match_menu=True))
+            prep.tap.assert_not_called()
+            home.assert_not_called()
+            match.return_value = None
+            self.assertIsNone(prep.close(keep_match_menu=True))
+            home.assert_called_once()
+
     def navigator(self, direct=False):
         config = load_config()
         config.farm_direct_search = direct

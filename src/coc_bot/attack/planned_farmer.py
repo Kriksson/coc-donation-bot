@@ -158,18 +158,22 @@ def run_planned_attack(farmer, *, automatic=False):
     if not farmer.attack_nav.leave_chat_for_home(): return FarmResult(False,'could not reach home')
     restore_camera(session)
     prepared_catalog = None
+    match_home = None
     if automatic and getattr(farmer.config,'progression_enabled',False):
         from coc_bot.progression.preparation import ArmyPreparation
         try:
-            prepared_catalog = ArmyPreparation(session).prepare()
+            preparation = ArmyPreparation(session)
+            prepared_catalog = preparation.prepare(keep_match_menu=True)
+            match_home = preparation.match_home
         except ValueError as exc:
             return FarmResult(False,'Army preparation: '+str(exc))
-    home=farmer.capture.screenshot()
+    home=match_home if match_home is not None else farmer.capture.screenshot()
     farmer._set_mode(BotMode.ATTACK)
     farmer._gs(GameState.ATTACK_MENU,'open unranked attack')
-    if not farmer.attack_nav.open_attack_menu(): return FarmResult(False,'could not open Attack menu')
+    if match_home is None and not farmer.attack_nav.open_attack_menu():
+        return FarmResult(False,'could not open Attack menu')
     farmer._gs(GameState.MATCHMAKING,'start unranked Battle')
-    if not farmer.attack_nav.start_unranked_battle():
+    if not farmer.attack_nav.start_unranked_battle(require_direct=match_home is not None):
         return FarmResult(False,'could not confirm opponent')
     if not farmer.attack_nav.wait_for_battle():
         return FarmResult(False, farmer.attack_nav.match_failure_reason or 'could not confirm opponent')
