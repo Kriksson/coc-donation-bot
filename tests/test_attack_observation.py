@@ -174,6 +174,33 @@ class MappingTests(TestCase):
 
 
 class SurveyBoundsTests(TestCase):
+    def test_clipped_automatic_line_gathers_a_registered_view_before_accepting_fit(self):
+        from coc_bot.attack.survey import survey
+
+        with TemporaryDirectory() as root:
+            session = Mock()
+            session.config.data_dir = Path(root)
+            session.config.progression_enabled = True
+            frame = np.full((600, 1000, 3), 80, np.uint8)
+            session.capture.screenshot.return_value = frame
+            session.client.wm_size.return_value = (1000, 600)
+            session.client.stop_check = lambda: False
+            camera = {'verified': True, 'scale': 1., 'transform': [[1, 0, 0], [0, 1, 0]]}
+            segment = {'points': [[.4, .2], [.5, .125]], 'support': 1.}
+            observation = OpponentMap(1000, 600, time.time(), 'test', [segment], True)
+            first, second = Mock(), Mock()
+            first.pixel.return_value = (430, 35)
+            with patch('coc_bot.attack.survey.compare_camera', return_value=camera), \
+                 patch('coc_bot.attack.survey.observe_boundary', return_value=observation), \
+                 patch('coc_bot.attack.survey.reveal_boundary', return_value=frame), \
+                 patch('coc_bot.attack.survey.fit_projection', side_effect=[first, second]) as fit:
+                result = survey(session, zoom=False, outer_fallback=True)
+            self.assertIs(result['projection'], second)
+            self.assertEqual(result['views'], 2)
+            session.input.swipe.assert_called_once_with(480, 276, 530, 396, 350)
+            session.input.tap.assert_not_called()
+            self.assertEqual(len(fit.call_args.args[0]), 4)
+
     def run_survey(self, projection=None, stop_after=None, weak_target=None):
         from coc_bot.attack.survey import survey
         with TemporaryDirectory() as root:

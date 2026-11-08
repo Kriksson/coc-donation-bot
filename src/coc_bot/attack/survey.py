@@ -8,7 +8,8 @@ import numpy as np
 from coc_bot.attack.army import check_stop
 from coc_bot.attack.camera import compare_camera
 from coc_bot.attack.mapping import observe_boundary
-from coc_bot.attack.projection import fit_projection
+from coc_bot.attack.plans import MapPoint
+from coc_bot.attack.projection import fit_projection, input_area
 from coc_bot.attack.battle_gate import BattleFrameGate
 from loguru import logger
 
@@ -135,6 +136,8 @@ def survey(session, *, zoom=True, full_map=False, compact=False, outer_fallback=
                 'mosaic_offset':[0,0],'mosaic_bounds':[0,0,w,h]}
     transform=np.eye(3);segments=[];views=[];projection=None
     edge_backup = None
+    deployment_pan_done = False
+    awaiting_deployment_edge = False
     # Move the village up/down, then across, returning through overlapping views.
     gestures=[(0,-.20),(0,.20),(0,.20),(0,-.20),(.16,0),(-.16,0),(-.16,0),(.16,0),
               # A tall village can keep its top edge under the timer after one
@@ -188,6 +191,23 @@ def survey(session, *, zoom=True, full_map=False, compact=False, outer_fallback=
         views.append({'frame':current,'transform':transform.tolist(),'segments':len(observation.segments)})
         evidence={}
         projection=fit_projection(segments,w,h,survey_evidence=evidence)
+        if awaiting_deployment_edge:
+            awaiting_deployment_edge = not (observation.stable and observation.segments)
+            if awaiting_deployment_edge:
+                projection = None
+        deployment_pan = None
+        if projection is not None and outer_fallback and not full_map and not deployment_pan_done:
+            first_row = .27 if getattr(session.config, 'progression_enabled', False) else .22
+            first = projection.pixel(MapPoint(.055, first_row))
+            target = (transform @ np.array([*first, 1.]))[:2]
+            if not input_area(*target, w, h) and index < len(gestures):
+                # A camera pan is already needed before deployment. Register
+                # the revealed red edge now so it can correct a clipped fit.
+                delta = np.clip(np.array([w*.48, h*.46])-target, [-w*.22,-h*.20], [w*.22,h*.20])
+                deployment_pan = delta / [w,h]
+                deployment_pan_done = True
+                awaiting_deployment_edge = True
+                logger.info('Survey: verifying the red boundary from the deployment view')
         if projection is None and outer_fallback and not full_map and index in (2,len(gestures)):
             from coc_bot.attack.outer_ring import outer_projection
             outer=outer_projection(previous,current,stop=stop)
@@ -203,8 +223,8 @@ def survey(session, *, zoom=True, full_map=False, compact=False, outer_fallback=
             edge = local_edge(previous, current, observation, center, motion)
             if edge is not None:
                 edge_backup = (edge, current, previous)
-        if (projection and (not full_map or index>=7)) or index==len(gestures): break
-        dx,dy=gestures[index]
+        if (projection and deployment_pan is None and (not full_map or index>=7)) or index==len(gestures): break
+        dx,dy=gestures[index] if deployment_pan is None else deployment_pan
         if index>=8 and projection is None:
             targeted=survey_pan(evidence,transform,w,h)
             if targeted is not None:
