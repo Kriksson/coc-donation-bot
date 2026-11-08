@@ -546,7 +546,11 @@ class ArmyPreparation:
             frame,cards,space=self.observe()
         counts={c.unit_id:c.quantity for c in cards}
         use_current = False
-        if 7 <= hall <= 10 and space[0] * 5 >= space[1] * 4:
+        # Keep a nearly full Dragon army at higher halls, too. A small
+        # capacity upgrade should not hold up a battle to add filler troops.
+        near_full_dragons = (hall >= 11 and 'dragon' in counts and 'electro_dragon' not in counts
+                             and space[0] * 20 >= space[1] * 19)
+        if near_full_dragons or (7 <= hall <= 10 and space[0] * 5 >= space[1] * 4):
             from coc_bot.progression.army import farming_plan
             try:
                 farming_plan(cards)
