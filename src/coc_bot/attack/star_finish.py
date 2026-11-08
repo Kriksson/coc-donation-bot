@@ -1,7 +1,6 @@
 """Opt-in end of a positively starred unranked battle."""
 from functools import lru_cache
 from pathlib import Path
-import re
 
 import cv2
 import numpy as np
@@ -12,9 +11,14 @@ from coc_bot.vision.battle_menu import _white_label, active_battle_ready
 from coc_bot.vision.matcher import TemplateMatcher
 
 
-@lru_cache(maxsize=1)
+@lru_cache(maxsize=4)
+def _reference(name):
+    assets = Path(__file__).resolve().parents[1] / 'vision' / 'assets'
+    return cv2.imread(str(assets / (name + '.png')))
+
+
 def star_template():
-    frame = cv2.imread(str(Path(__file__).resolve().parents[1] / 'vision/assets/earned_battle_star.png'))
+    frame = _reference('earned_battle_star')
     return _star_mask(frame) if frame is not None else None
 
 
@@ -53,19 +57,22 @@ def starred_end_button(frame, stop=None):
 
 def finish_confirmation(frame, stop=None):
     """Require End Battle plus both labeled buttons on its modal."""
+    if stop and stop():
+        return None
     if _color_fraction(frame, (.31,.53,.49,.71), (5,90,90), (32,255,255)) < .20:
         return None
     if _color_fraction(frame, (.53,.55,.67,.69), (34,80,90), (92,255,255)) < .30:
         return None
-    title = _white_label(frame, (.30,.28,.70,.40), stop)
-    if not re.fullmatch(r'end(?:the)?batt[li]e', title):
-        return None
-    if _white_label(frame, (.31,.53,.49,.71), stop) != 'cancel':
-        return None
-    if _white_label(frame, (.51,.53,.69,.71), stop) not in ('okay','ok'):
-        return None
-    h, w = frame.shape[:2]
-    return round(w*.60), round(h*.62)
+    scale = frame.shape[1]/1853
+    matcher = TemplateMatcher(scale_range=[scale*s for s in (.98,1.,1.02)])
+    for name, region in (('star_end_title', (.39,.27,.62,.35)),
+                         ('star_end_cancel', (.32,.59,.45,.69)),
+                         ('star_end_okay', (.55,.59,.66,.69))):
+        template = _reference(name)
+        result = matcher.find_in_roi(frame, template, region, threshold=.96) if template is not None else None
+        if result is None:
+            return None
+    return result.center
 
 
 def finish_star_battle(nav, frame, target):

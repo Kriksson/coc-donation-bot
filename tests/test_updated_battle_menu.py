@@ -28,6 +28,20 @@ class UpdatedMenuTests(unittest.TestCase):
         with patch('coc_bot.vision.battle_menu._white_label', side_effect=['batbleendsin','overalldamage']):
             self.assertTrue(active_battle_ready(self.frame()))
 
+    def test_star_finish_confirmation_requires_all_native_controls(self):
+        from coc_bot.attack.star_finish import _reference, finish_confirmation
+
+        frame = self.frame()
+        cv2.rectangle(frame, (600, 610), (835, 720), (0, 140, 255), -1)
+        cv2.rectangle(frame, (1000, 610), (1240, 720), (0, 220, 30), -1)
+        for name, x, y in (('title', 745, 294), ('cancel', 632, 646), ('okay', 1055, 648)):
+            anchor = _reference('star_end_' + name)
+            height, width = anchor.shape[:2]
+            frame[y:y+height, x:x+width] = anchor
+        self.assertEqual(finish_confirmation(frame), (1124, 674))
+        frame[294:354, 745:1112] = 0
+        self.assertIsNone(finish_confirmation(frame))
+
     def test_early_finish_never_taps_an_unverified_confirmation_twice(self):
         from coc_bot.attack.star_finish import finish_star_battle
 
