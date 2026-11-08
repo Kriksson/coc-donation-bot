@@ -134,6 +134,7 @@ def survey(session, *, zoom=True, full_map=False, compact=False, outer_fallback=
                 'projection':projection,'segments':[],'views':1,'captured_at':time.time(),
                 'mosaic_offset':[0,0],'mosaic_bounds':[0,0,w,h]}
     transform=np.eye(3);segments=[];views=[];projection=None
+    edge_backup = None
     # Move the village up/down, then across, returning through overlapping views.
     gestures=[(0,-.20),(0,.20),(0,.20),(0,-.20),(.16,0),(-.16,0),(-.16,0),(.16,0),
               # A tall village can keep its top edge under the timer after one
@@ -196,6 +197,12 @@ def survey(session, *, zoom=True, full_map=False, compact=False, outer_fallback=
                 return {'reference':current,'previous':previous,'current':current,'mosaic':current,
                         'projection':outer,'segments':[],'views':index+1,'captured_at':time.time(),
                         'mosaic_offset':[0,0],'mosaic_bounds':[0,0,w,h]}
+        if projection is None and outer_fallback and not full_map:
+            from coc_bot.attack.edge_fallback import local_edge
+            center = (transform @ np.array([w*.5, h*.45, 1.]))[:2]
+            edge = local_edge(previous, current, observation, center, motion)
+            if edge is not None:
+                edge_backup = (edge, current, previous)
         if (projection and (not full_map or index>=7)) or index==len(gestures): break
         dx,dy=gestures[index]
         if index>=8 and projection is None:
@@ -207,6 +214,13 @@ def survey(session, *, zoom=True, full_map=False, compact=False, outer_fallback=
         session.input.swipe(round(w*.48),round(h*.46),round(w*(.48+dx)),round(h*(.46+dy)),350)
         session._sleep(.3)
         frame=current
+    if projection is None and edge_backup is not None:
+        edge, current, previous = edge_backup
+        (evidence_dir/'local-edge.json').write_text(json.dumps({'start':edge.start, 'end':edge.end}))
+        logger.info('Using observed edge fallback; first troop requires native confirmation')
+        return {'reference':current,'previous':previous,'current':current,'mosaic':current,
+                'projection':edge,'segments':[],'views':len(views),'captured_at':time.time(),
+                'mosaic_offset':[0,0],'mosaic_bounds':[0,0,w,h]}
     # A mosaic allows reviewing corners outside the original view. Never use HUD
     # pixels in the mosaic; the original reference remains the coordinate anchor.
     canvas=np.zeros((h*2,w*2,3),np.uint8);offset=np.array([[1,0,w*.5],[0,1,h*.5],[0,0,1.]])

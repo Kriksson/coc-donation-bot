@@ -22,6 +22,24 @@ from coc_bot.attack.planned_farmer import restore_camera
 
 
 class ProjectionTests(TestCase):
+    def test_local_backup_uses_a_repeated_edge_and_has_no_interior(self):
+        from coc_bot.attack.edge_fallback import local_edge
+        from coc_bot.attack.mapping import observe_boundary
+
+        frame = np.zeros((1048,1853,3), np.uint8)
+        cv2.line(frame, (1345,644), (1509,521), (40,55,205), 1)
+        observation = observe_boundary(frame, battle_confirmed=True)
+        center = np.array([925, 470])
+        edge = local_edge(frame.copy(), frame, observation, center, np.eye(3))
+        self.assertIsNotNone(edge)
+        self.assertGreater(edge.pixel(MapPoint(.055,.5))[0], 1427)
+        with self.assertRaises(ValueError):
+            edge.pixel(MapPoint(.5,.5))
+        moving = np.eye(3)
+        moving[0,2] = 5
+        self.assertIsNone(local_edge(frame.copy(), frame, observation, center, moving))
+        self.assertIsNone(local_edge(np.zeros_like(frame), frame, observation, center, np.eye(3)))
+
     def projection(self):return Projection(((500,50),(900,300),(500,550),(100,300)))
 
     def test_round_trip_and_legal_deployment_band(self):

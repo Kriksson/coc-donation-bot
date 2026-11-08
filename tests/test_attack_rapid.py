@@ -97,20 +97,23 @@ class OuterTerrainTests(TestCase):
 
 
 class RapidExecutorTests(TestCase):
-    def executor(self,root,*,outer=False):
+    def executor(self,root,*,outer=False,local=False):
         frame=np.zeros((600,1000,3),np.uint8)
         session=Mock();session.config.data_dir=Path(root);session.config.adb_device='test'
         session.client.stop_check=lambda:False;session.input.dry_run=False
         plan=AttackPlan((ArmyEntry('electro_dragon','troop',3,True),),
                        (PlanStep('deploy_line','electro_dragon',3,(MapPoint(.055,.4),MapPoint(.055,.6))),))
         projection=Projection(((500,50),(900,300),(500,550),(100,300)),source=SOURCE if outer else 'measured')
+        if local:
+            from coc_bot.attack.edge_fallback import LocalEdge
+            projection = LocalEdge((300,250),(300,350))
         exe=VerifiedExecutor(session,plan,projection,frame,Mock(),spam=True)
         exe.frame=Mock(return_value=frame);exe.position=Mock(return_value=(frame,(300,300)))
         exe.target=Mock(return_value=(300,300))
         def card(n):return ArmyCard('0',(100,500,70,95),'electro_dragon','troop',n)
         exe.find=Mock(return_value=(frame,card(3)))
         exe.select=Mock(side_effect=[(frame,card(3)),(frame,card(2))])
-        exe.resolve=Mock(side_effect=[card(2),card(0)] if outer else [card(0)])
+        exe.resolve=Mock(side_effect=[card(2),card(0)] if outer or local else [card(0)])
         return exe,session
 
     def test_outer_ring_confirms_single_troop_before_burst(self):
@@ -122,13 +125,14 @@ class RapidExecutorTests(TestCase):
             self.assertEqual(exe.result.verified_taps,3)
 
     def test_outer_probe_failure_never_sends_burst_or_retries(self):
-        with TemporaryDirectory() as root:
-            exe,session=self.executor(root,outer=True)
-            exe.resolve=Mock(return_value=ArmyCard('0',(100,500,70,95),'electro_dragon','troop',3))
-            with self.assertRaisesRegex(ValueError,'No verified deployment change'):
-                exe.deploy_batch('electro_dragon',[MapPoint(.055,.5)]*3,spam=True)
-            session.input.tap.assert_called_once();session.input.tap_many.assert_not_called()
-            self.assertTrue(exe.result.uncertain_tap)
+        for local in (False, True):
+            with self.subTest(local=local), TemporaryDirectory() as root:
+                exe,session=self.executor(root,outer=not local,local=local)
+                exe.resolve=Mock(return_value=ArmyCard('0',(100,500,70,95),'electro_dragon','troop',3))
+                with self.assertRaisesRegex(ValueError,'No verified deployment change'):
+                    exe.deploy_batch('electro_dragon',[MapPoint(.055,.5)]*3,spam=True)
+                session.input.tap.assert_called_once();session.input.tap_many.assert_not_called()
+                self.assertTrue(exe.result.uncertain_tap)
 
     def test_persistent_transport_is_used_and_closed_after_verified_run(self):
         with TemporaryDirectory() as root,patch('coc_bot.adb.multitouch.Multitouch') as factory:

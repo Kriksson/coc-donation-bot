@@ -87,7 +87,7 @@ def same_page(before, after):
         for a,b in zip(before,after))
 
 
-def scan_army(session, catalog):
+def scan_army(session, catalog, *, include_spells=True):
     """Inspect both ends of the army bar, never selecting a unit or map point.
 
     Every page uses two fresh battle frames. Duplicate units across overlapping
@@ -120,6 +120,8 @@ def scan_army(session, catalog):
         observed = agree_cards(before, read_army(second, 'battle', catalog, stop_check=stop))
         after = []
         for card in observed:
+            if not include_spells and card.kind == 'spell':
+                continue
             if card.kind == 'hero' and not ready_hero(card):
                 if card.unit_id and card.unit_id not in skipped_heroes:
                     logger.info('Automatic attack: skipping unverified hero {}', card.unit_id)

@@ -184,8 +184,9 @@ def run_planned_attack(farmer, *, automatic=False):
             raise ValueError('Deployment boundary coverage could not be verified; no deployment sent')
         if automatic:
             from coc_bot.attack.automatic import automatic_plan, scan_army
+            from coc_bot.attack.edge_fallback import SOURCE as LOCAL_EDGE
             catalog=prepared_catalog or learned_catalog(farmer.config,use_saved_routine=False)
-            cards=scan_army(session,catalog)
+            cards=scan_army(session,catalog,include_spells=observed['projection'].source != LOCAL_EDGE)
             line=None
             if observed['projection'].source=='observed_starter_envelope':
                 from coc_bot.progression.mapping import deployment_line

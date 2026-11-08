@@ -18,6 +18,7 @@ from coc_bot.attack.battle_gate import BattleFrameGate
 from coc_bot.adb.client import AdbStopped
 from coc_bot.vision.battle_menu import active_battle_ready
 from coc_bot.attack.reinforcements import CLAN_CASTLE
+from coc_bot.attack.edge_fallback import SOURCE as LOCAL_EDGE
 
 
 class ReinforcementsUnavailable(ValueError):
@@ -106,7 +107,7 @@ class VerifiedExecutor:
         self.spam=spam
         self.optional_heroes = {entry.unit_id for entry in plan.army if spam and entry.kind == 'hero'}
         self.touch=None
-        self._outer_probe_pending=projection.source=='registered_default_outer_ring'
+        self._outer_probe_pending=projection.source in ('registered_default_outer_ring', LOCAL_EDGE)
         self.path=Path(journal_dir or session.config.data_dir/'debug'/'attack-executions')/(uuid.uuid4().hex+'.jsonl')
         self.path.parent.mkdir(parents=True,exist_ok=True)
 

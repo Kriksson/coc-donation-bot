@@ -69,6 +69,15 @@ class AutomaticPlanTests(TestCase):
 
 
 class AutomaticScanTests(TestCase):
+    def test_edge_fallback_leaves_spells_unused_even_if_the_count_changes(self):
+        session, catalog = self.session(), Mock()
+        rage = card('rage', 'spell', 5, 250)
+        readings = [[card(), rage], [card(), replace(rage, quantity=4)]] * 3
+        with patch('coc_bot.attack.automatic.BattleFrameGate'), \
+                patch('coc_bot.attack.automatic.read_army', side_effect=readings):
+            cards = scan_army(session, catalog, include_spells=False)
+        self.assertEqual([c.unit_id for c in cards], ['electro_dragon'])
+
     def test_standard_giant_artwork_does_not_require_the_original_count_badge(self):
         from coc_bot.attack.army import standard_troop_portraits
         from coc_bot.control.attack_planner import learned_catalog
