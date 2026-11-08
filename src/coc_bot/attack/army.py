@@ -37,6 +37,12 @@ class ArmyCard:
         return asdict(self)
 
 
+@lru_cache(maxsize=1)
+def standard_troop_portraits():
+    with np.load(Path(__file__).with_name('assets')/'troop_portraits.npz', allow_pickle=False) as archive:
+        return tuple((name, archive[name]) for name in archive.files)
+
+
 class UnitCatalog:
     """Match alpha-masked artwork; confidence and runner-up margin must agree.
 

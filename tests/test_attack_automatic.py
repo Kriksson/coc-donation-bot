@@ -69,6 +69,18 @@ class AutomaticPlanTests(TestCase):
 
 
 class AutomaticScanTests(TestCase):
+    def test_standard_giant_artwork_does_not_require_the_original_count_badge(self):
+        from coc_bot.attack.army import standard_troop_portraits
+        from coc_bot.control.attack_planner import learned_catalog
+
+        with TemporaryDirectory() as root:
+            config = SimpleNamespace(data_dir=Path(root), adb_device='test')
+            catalog = learned_catalog(config, use_saved_routine=False)
+            portrait = dict(standard_troop_portraits())['giant'].copy()
+            portrait[:35, :65] = 0
+            self.assertEqual(catalog.identify_reference(portrait)[:2], ('giant', 'troop'))
+            self.assertIsNone(catalog.identify_reference(np.zeros_like(portrait)))
+
     def test_hero_that_changes_between_frames_is_omitted(self):
         session, catalog = self.session(), Mock()
         king = card('king', 'hero', 1, 250)

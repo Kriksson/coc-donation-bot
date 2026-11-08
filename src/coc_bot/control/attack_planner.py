@@ -6,7 +6,7 @@ import time
 
 import cv2
 
-from coc_bot.attack.army import ArmyCard, UnitCatalog, check_stop
+from coc_bot.attack.army import ArmyCard, UnitCatalog, check_stop, standard_troop_portraits
 from coc_bot.attack.plans import AttackPlan, ArmyEntry, MapPoint, mass_edrag_plan
 from coc_bot.attack.projection import Projection, validate_geometry
 from coc_bot.control.attack_observation import (inspect_attack, report_folder, read_report,
@@ -34,6 +34,9 @@ def load_template(config, *, require_live=False):
 
 def learned_catalog(config, *, unit_ids=None, use_saved_routine=True):
     catalog=UnitCatalog(config.data_dir/'icons')
+    for name, image in standard_troop_portraits():
+        h, w = image.shape[:2]
+        catalog.add_references(image, [ArmyCard('shared-troop', (0,0,w,h), name, 'troop', None, confirmed=True)])
     load_recent_references(config.data_dir,catalog,config.adb_device)
     if use_saved_routine and unit_ids is None and template_path(config).is_file():
         try:
