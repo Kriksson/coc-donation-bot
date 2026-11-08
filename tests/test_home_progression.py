@@ -205,6 +205,26 @@ class ProgressionPolicyTests(TestCase):
             prep.unlocked.assert_not_called()
             prep.adjust.assert_not_called()
 
+    def test_verified_th10_ground_army_can_attack_without_replacing_troops(self):
+        from coc_bot.progression.preparation import ArmyPreparation
+        from coc_bot.accounts.store import selected_account
+        with tempfile.TemporaryDirectory() as folder:
+            prep = ArmyPreparation.__new__(ArmyPreparation)
+            prep.s = SimpleNamespace(config=SimpleNamespace(data_dir=Path(folder), account_tag='#PYLQG',
+                                                             account_town_hall=10))
+            prep.catalog = SimpleNamespace()
+            prep.open, prep.close, prep.unlocked, prep.adjust = Mock(), Mock(), Mock(), Mock()
+            cards = [ArmyCard(unit, (100,280,100,150), unit, 'troop', quantity, stable=True)
+                     for unit, quantity in (('giant',30), ('archer',10), ('wall_breaker',5))]
+            prep.observe = Mock(return_value=(None, cards, (170,190)))
+            token = selected_account.set({'tag':'#PYLQG', 'town_hall':10})
+            try:
+                self.assertEqual(prep._prepare().prepared_hall, 10)
+            finally:
+                selected_account.reset(token)
+            prep.unlocked.assert_not_called()
+            prep.adjust.assert_not_called()
+
     def test_wall_queue_confirmation_checks_two_frames_without_repaying(self):
         from coc_bot.progression.walls import WallUpgrade
         row={'name':'Wall','cost':1000,'currency':'gold','target_level':2,'quantity':24}

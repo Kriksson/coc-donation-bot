@@ -528,7 +528,20 @@ class ArmyPreparation:
             if not clear_inactive(self):raise
             logger.info('Removed inactive Super Troops; verified empty camps before preparing farming army')
             frame,cards,space=self.observe()
-        if self.preferred_unit and any(c.unit_id==self.preferred_unit and c.quantity>0 for c in cards):
+        counts={c.unit_id:c.quantity for c in cards}
+        use_current = False
+        if 7 <= hall <= 10 and space[0] * 5 >= space[1] * 4:
+            from coc_bot.progression.army import farming_plan
+            try:
+                farming_plan(cards)
+            except ValueError:
+                pass
+            else:
+                use_current = True
+        if use_current:
+            logger.info('Using verified existing farming army at {}/{} housing', *space)
+            unlocked = {name:{'level':1,'point':None} for name in counts}
+        elif self.preferred_unit and any(c.unit_id==self.preferred_unit and c.quantity>0 for c in cards):
             # Two matching owned-army observations already prove availability
             # (at least level one). Exact troop levels are not needed to choose
             # mass Electro Dragons, and existing quantities need no picker scan.
@@ -536,8 +549,7 @@ class ArmyPreparation:
             logger.info('Using verified {} army and current camp capacity; skipping troop descriptions',
                         self.preferred_unit.replace('_', ' '))
         else:unlocked=self.unlocked(frame,cards)
-        desired=composition(hall,space[1],{u:v['level'] for u,v in unlocked.items()})
-        counts={c.unit_id:c.quantity for c in cards}
+        desired=counts if use_current else composition(hall,space[1],{u:v['level'] for u,v in unlocked.items()})
         if counts!=desired:
             self.adjust(desired,unlocked)
             # Read the final capacity on the bright editor, outside the picker.
