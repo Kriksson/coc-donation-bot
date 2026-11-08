@@ -107,6 +107,26 @@ class UpdatedMenuTests(unittest.TestCase):
             self.assertIsNone(prep.close(keep_match_menu=True))
             home.assert_called_once()
 
+    def test_army_close_rechecks_the_editor_after_castle_request(self):
+        from coc_bot.progression.preparation import ArmyPreparation
+
+        prep = ArmyPreparation.__new__(ArmyPreparation)
+        prep.stop = None
+        prep.s = MagicMock()
+        prep.s.config.account_tag = '#ABC'
+        prep.tap = MagicMock()
+        prep.frame = MagicMock(side_effect=[self.frame(), self.frame()])
+        with patch('coc_bot.progression.preparation.read_info', return_value=None), \
+             patch('coc_bot.progression.preparation.picker_editor_visible', return_value=False), \
+             patch('coc_bot.progression.preparation.army_editor_close_button',
+                   side_effect=[(1792, 95), None]), \
+             patch('coc_bot.donation.reinforcements.eligible', return_value=True), \
+             patch('coc_bot.donation.reinforcements.request_if_empty', return_value=True) as request:
+            with self.assertRaisesRegex(ValueError, 'My Army close control changed'):
+                prep.close(keep_match_menu=True, check_castle=True)
+        request.assert_called_once()
+        prep.tap.assert_not_called()
+
     def navigator(self, direct=False):
         config = load_config()
         config.farm_direct_search = direct

@@ -216,14 +216,17 @@ class ProgressionPolicyTests(TestCase):
             prep.open, prep.close, prep.unlocked, prep.adjust = Mock(), Mock(), Mock(), Mock()
             cards = [ArmyCard(unit, (100, 280, 100, 150), unit, 'troop', quantity, stable=True)
                      for unit, quantity in (('dragon', 12), ('archer', 10))]
-            prep.observe = Mock(return_value=(None, cards, (250, 255)))
+            prep.observe = Mock(side_effect=[ValueError('Army composition is uncertain'),
+                                             (None, cards, (250, 255))])
+            prep.close.side_effect = lambda **kwargs: self.assertEqual(prep.observe.call_count, 2)
             token = selected_account.set({'tag': '#PYLQG', 'town_hall': 12})
             try:
-                self.assertEqual(prep._prepare().prepared_hall, 12)
+                self.assertEqual(prep._prepare(for_attack=True).prepared_hall, 12)
             finally:
                 selected_account.reset(token)
             prep.unlocked.assert_not_called()
             prep.adjust.assert_not_called()
+            prep.close.assert_called_once_with(keep_match_menu=False, check_castle=True)
 
     def test_verified_th10_ground_army_can_attack_without_replacing_troops(self):
         from coc_bot.progression.preparation import ArmyPreparation

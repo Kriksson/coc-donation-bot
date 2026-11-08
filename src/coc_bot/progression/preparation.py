@@ -466,7 +466,7 @@ class ArmyPreparation:
             if preferred and first['unit_id']==preferred:return frame
         return frame
 
-    def close(self, *, keep_match_menu=False):
+    def close(self, *, keep_match_menu=False, check_castle=False):
         frame=self.frame()
         info=read_info(frame,self.stop)
         if info is not None:
@@ -479,6 +479,14 @@ class ArmyPreparation:
             if not army_heading_visible(frame,self.stop):raise ValueError('My Army disappeared before closing')
         point=army_editor_close_button(frame,self.stop)
         if point:
+            if check_castle:
+                from coc_bot.donation.reinforcements import eligible, request_if_empty
+                from coc_bot.runtime.task_timing import measure_task
+
+                if eligible(self.s.config):
+                    with measure_task(self.s.config.account_tag, 'castle_request') as timing:
+                        checked = request_if_empty(self.s, open_army_frame=frame)
+                        timing['outcome'] = 'checked' if checked else 'cooldown'
             if army_editor_close_button(self.frame(),self.stop)!=point:
                 raise ValueError('My Army close control changed')
             self.tap(point)
@@ -534,22 +542,18 @@ class ArmyPreparation:
         self.preferred_unit='electro_dragon' if hall>=11 else 'dragon' if hall>=7 else None
         self.match_home = None
         if for_attack:
-            army = self.open(remember_match_home=True)
-            from coc_bot.donation.reinforcements import eligible, request_if_empty
-            from coc_bot.runtime.task_timing import measure_task
-
-            if eligible(self.s.config):
-                with measure_task(self.s.config.account_tag, 'castle_request') as timing:
-                    checked = request_if_empty(self.s, open_army_frame=army)
-                    timing['outcome'] = 'checked' if checked else 'cooldown'
+            self.open(remember_match_home=True)
         else:
             self.open()
         try:frame,cards,space=self.observe()
         except ValueError as exc:
-            if str(exc)!='Army cards do not match occupied camp space':raise
-            from coc_bot.progression.inactive_army import clear_inactive
-            if not clear_inactive(self):raise
-            logger.info('Removed inactive Super Troops; verified empty camps before preparing farming army')
+            if str(exc) in ('Army composition is uncertain', 'Army capacity changed'):
+                logger.info('Army readings disagreed — checking a fresh pair before any edits')
+            else:
+                if str(exc)!='Army cards do not match occupied camp space':raise
+                from coc_bot.progression.inactive_army import clear_inactive
+                if not clear_inactive(self):raise
+                logger.info('Removed inactive Super Troops; verified empty camps before preparing farming army')
             frame,cards,space=self.observe()
         counts={c.unit_id:c.quantity for c in cards}
         use_current = False
@@ -586,9 +590,11 @@ class ArmyPreparation:
             frame,cards,space=self.observe()
             if {c.unit_id:c.quantity for c in cards}!=desired:
                 raise ValueError('Prepared army does not match the farming composition')
-        if self.match_home is None:
+        if for_attack:
+            if not self.close(keep_match_menu=self.match_home is not None, check_castle=True):
+                self.match_home = None
+        else:
             self.close()
-        elif not self.close(keep_match_menu=True):
             self.match_home = None
         write_json(self.s.config.data_dir/'progression/army.json',{'hall':hall,'capacity':space[1],
                    'troops':desired,'unlocks':{u:v['level'] for u,v in unlocked.items()},'at':time.time()})
