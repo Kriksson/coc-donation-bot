@@ -25,14 +25,24 @@ class RotationStore:
     def load(self):
         value=read(self.path,{})
         return {'enabled':False,'primary_id':None,'task_driven':False,'watch_seconds':900,'visit_seconds':180,
-                'interval_seconds':1800,'visits':{},'paused_at':None}|value
+                'interval_seconds':1800,'visits':{},'paused_at':None,
+                'attack_target_per_hour':0,'finish_after_star':False}|value
 
     def configure(self, *, enabled, primary_id, watch_seconds=900, visit_seconds=180, interval_seconds=1800,
-                  task_driven=None):
+                  task_driven=None, attack_target_per_hour=None, finish_after_star=None):
         state=self.accounts.load()
         previous=self.load()
         if task_driven is None:task_driven=previous['task_driven']
         if type(task_driven) is not bool:raise ValueError('Choose a valid account scheduling mode')
+        if attack_target_per_hour is None:
+            attack_target_per_hour = previous['attack_target_per_hour'] if task_driven else 0
+        if finish_after_star is None:
+            finish_after_star = previous['finish_after_star'] if attack_target_per_hour else False
+        if type(attack_target_per_hour) is not int or not 0 <= attack_target_per_hour <= 6:
+            raise ValueError('Choose a whole attack target from zero to six per hour')
+        if (attack_target_per_hour and not task_driven or type(finish_after_star) is not bool
+                or finish_after_star and not attack_target_per_hour):
+            raise ValueError('Attack pacing and early finish require task-driven rotation')
         main=next((a for a in state['accounts'] if a['id']==primary_id),None)
         if type(enabled) is not bool or main is None or 'donating' not in main['roles']:
             raise ValueError('Choose a saved account with the Donating role as the main account')
@@ -43,12 +53,16 @@ class RotationStore:
         if not 300<=interval_seconds<=86400:
             raise ValueError('Account check interval must be between five minutes and one day')
         value=previous|{'enabled':enabled,'primary_id':primary_id,'task_driven':task_driven,'watch_seconds':watch_seconds,
-                          'visit_seconds':visit_seconds,'interval_seconds':interval_seconds}
+                          'visit_seconds':visit_seconds,'interval_seconds':interval_seconds,
+                          'attack_target_per_hour':attack_target_per_hour,'finish_after_star':finish_after_star}
         if state.get('pending'):raise ValueError('Finish adding or verifying the loaded account first')
         if task_driven and not previous['task_driven']:
             # Remove old donor-policy scheduling delays, not action cooldowns
             # or persisted checklist/payment state.
             for visit in value['visits'].values():visit['next_visit_at']=0
+        if attack_target_per_hour and not previous['attack_target_per_hour']:
+            for visit in value['visits'].values():
+                visit.pop('next_farm_at', None)
         write(self.path,value)
         return value
 
@@ -69,11 +83,41 @@ class RotationStore:
     def next_account(self, now, *, current_id=None):
         state=self.load()
         excluded=(current_id or self.accounts.load()['active']) if state['task_driven'] else state['primary_id']
+        due = self.next_farming_account(state, now, excluded)
+        if due is not None:
+            return due
         eligible=[a for a in self.accounts.load()['accounts'] if a['id']!=excluded and
                   set(a['roles']) & {'farming','upgrading','builder_base'} and
                   state['visits'].get(a['id'],{}).get('next_visit_at',0)<=now]
         return min(eligible,key=lambda a:state['visits'].get(a['id'],{}).get('last_checked_at',
                    state['visits'].get(a['id'],{}).get('last_finished_at',0)),default=None)
+
+    @staticmethod
+    def farming_due(state, account, now):
+        return bool(state['task_driven'] and state['attack_target_per_hour'] and 'farming' in account['roles']
+                    and state['visits'].get(account['id'], {}).get('next_farm_at', 0) <= now)
+
+    def next_farming_account(self, state, now, excluded):
+        if not state['attack_target_per_hour']:
+            return None
+        due = (account for account in self.accounts.load()['accounts'] if account['id'] != excluded
+               and self.farming_due(state, account, now))
+        return min(due, key=lambda a:state['visits'].get(a['id'], {}).get('last_farm_attempt_at', 0), default=None)
+
+    def farm_due_soon(self, now):
+        state = self.load()
+        return any(self.farming_due(state, a, now+180) for a in self.accounts.load()['accounts'])
+
+    def record_farming(self, account_id, now, *, started=None, completed=False, delay=300):
+        state = self.load()
+        visit = state['visits'].setdefault(account_id, {})
+        visit['last_farm_attempt_at'] = started if started is not None else now
+        if completed:
+            visit['next_farm_at'] = visit['last_farm_attempt_at'] + 3600 / state['attack_target_per_hour']
+            visit['last_verified_farm_at'] = now
+        else:
+            visit['next_farm_at'] = now + delay
+        write(self.path, state)
 
     def complete(self, ident, now, elapsed, *, suspended=False):
         state=self.load();visit=state['visits'].setdefault(ident,{})
@@ -223,6 +267,15 @@ class AccountFleet:
             # Open donation states never enter this checkpoint.
             if ('donating' in account['roles'] and
                     getattr(self.current,'_visit_chat_pending',False) is True):return False
+            if state['attack_target_per_hour']:
+                if self.rotation.farming_due(state, account, now):
+                    return False
+                target = self.rotation.next_farming_account(state, now, account['id'])
+                if target is not None:
+                    self._visit_suspended = bool(visit and not visit.complete())
+                    self._next = target['id']
+                    logger.info('Attack pacing: handing off to {} at a safe checkpoint', target['nickname'])
+                    return True
             complete=bool(visit and visit.complete())
             if not complete and now-started<state['visit_seconds']:return False
             target=self.rotation.next_account(now,current_id=account['id'])
@@ -358,6 +411,17 @@ class AccountFleet:
                         detour=self.rotation.load().get('donation_detour')
                         if detour and account['id']==detour['donor']:
                             self.current._fleet_work_order=lambda:()
+                        elif state['task_driven'] and state['attack_target_per_hour'] and 'farming' in account['roles']:
+                            self.current._fleet_farm_due_soon = lambda: self.rotation.farm_due_soon(self.clock())
+                            if (self.current.config.farm_enabled and self.current.config.farm_calibrated
+                                    and self.current.config.farm_engine == 'automatic' and not self.current.config.dry_run):
+                                self.current._fleet_farm_due = lambda: self.rotation.farming_due(
+                                    self.rotation.load(), account, self.clock())
+                                self.current._fleet_record_farm = lambda **fields: self.rotation.record_farming(
+                                    account['id'], self.clock(), **fields)
+                                self.current.farmer.finish_after_star = state['finish_after_star']
+                            else:
+                                self.rotation.record_farming(account['id'], self.clock(), delay=1200)
                         self.activity=('Watching '+account['nickname'] if account['id']==main['id'] and not state['task_driven']
                                        else 'Visiting '+account['nickname'])
                         logger.info('Activity: {}',self.activity)

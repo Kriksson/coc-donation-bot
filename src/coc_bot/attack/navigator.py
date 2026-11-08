@@ -612,6 +612,7 @@ class AttackNavigator:
         timeout: float | None = None,
         *,
         since: float | None = None,
+        finish_after_star: bool = False,
     ) -> ScreenType:
         """
         Recognize results after deploy, keeping the original fixed-time fallback.
@@ -630,6 +631,8 @@ class AttackNavigator:
         previous = None
         previous_at = 0.0
         last_diagnostic_reason = None
+        star_target = None
+        star_attempted = False
         self.last_battle_end_reason = "watching"
         while deadline - time.monotonic() > 4.0:
             if self._stopping():
@@ -672,6 +675,14 @@ class AttackNavigator:
                 previous, previous_at = target, now
             else:
                 previous = None
+            if finish_after_star and not star_attempted:
+                from coc_bot.attack.star_finish import finish_star_battle, starred_end_button
+
+                candidate = starred_end_button(frame, self.stop_check) if frame is not None and target is None else None
+                if candidate is not None and candidate == star_target and not self._stopping():
+                    star_attempted = True
+                    finish_star_battle(self, frame, candidate)
+                star_target = candidate
             # Confirm a possible result promptly; otherwise poll at a modest
             # rate. Neither elapsed time nor a single frame proves completion.
             if self._sleep(min(1.0 if target is not None else 2.0,
@@ -693,8 +704,9 @@ class AttackNavigator:
             return ScreenType.POPUP
         self.last_battle_end_reason = "timer_fallback"
         self._save_battle_end_frame(frame, "fallback")
-        logger.info("Battle timer done — forcing Return Home coordinates (no vision skip)")
-        self._tap_return_home_coords(frame)
+        if not star_attempted:
+            logger.info("Battle timer done — forcing Return Home coordinates (no vision skip)")
+            self._tap_return_home_coords(frame)
         if self._sleep(1.5):
             return ScreenType.UNKNOWN
         return ScreenType.BATTLE_RESULTS

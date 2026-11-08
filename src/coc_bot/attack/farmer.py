@@ -53,6 +53,7 @@ class AttackFarmer:
         self.stop_check: Callable[[], bool] | None = None
         self._on_mode: Callable[[BotMode], None] | None = None
         self.tracker = None
+        self.finish_after_star = False
 
     def _stopping(self) -> bool:
         return bool(self.stop_check and self.stop_check())

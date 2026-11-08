@@ -40,6 +40,8 @@ class AccountRotation(Payload):
     watch_seconds: StrictInt = 900
     visit_seconds: StrictInt = 180
     interval_seconds: StrictInt = 1800
+    attack_target_per_hour: StrictInt | None = None
+    finish_after_star: StrictBool | None = None
 
 
 class UpgradeRequest(Payload):

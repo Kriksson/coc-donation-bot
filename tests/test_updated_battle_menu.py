@@ -9,6 +9,35 @@ from coc_bot.vision.screens import ScreenClassifier, ScreenType, BotMode
 
 
 class UpdatedMenuTests(unittest.TestCase):
+    def test_early_finish_requires_native_star_and_active_end_battle_label(self):
+        from coc_bot.attack.star_finish import star_template, starred_end_button
+
+        frame = self.frame()
+        star = star_template()
+        frame[762:811,1550:1600] = np.repeat(star[:,:,None], 3, axis=2)
+        with patch('coc_bot.attack.star_finish.active_battle_ready', return_value=True), \
+                patch('coc_bot.attack.star_finish._white_label', return_value='endbattle'):
+            self.assertEqual(starred_end_button(frame), (139, 781))
+            self.assertIsNone(starred_end_button(self.frame()))
+        with patch('coc_bot.attack.star_finish.active_battle_ready', return_value=True), \
+                patch('coc_bot.attack.star_finish._white_label', return_value='surrender'):
+            self.assertIsNone(starred_end_button(frame))
+
+    def test_early_finish_never_taps_an_unverified_confirmation_twice(self):
+        from coc_bot.attack.star_finish import finish_star_battle
+
+        nav = self.navigator()
+        nav.capture.observe.return_value = self.frame()
+        nav.battle_completion = MagicMock()
+        nav.battle_completion.detect.return_value = None
+        nav._save_battle_end_frame = MagicMock()
+        with patch('coc_bot.attack.star_finish.AttackCheckpoint') as checkpoint, \
+                patch('coc_bot.attack.star_finish.finish_confirmation', return_value=None):
+            checkpoint.return_value.load.return_value = {'phase':'deployment_finished',
+                'deployment_possible':True, 'journal':'verified.jsonl'}
+            finish_star_battle(nav, self.frame(), (139, 781))
+        nav.input.tap.assert_called_once_with(139, 781, jitter=0)
+
     def frame(self, scale=1):
         frame = np.zeros((int(1048*scale), int(1853*scale), 3), np.uint8)
         cv2.rectangle(frame, (int(108*scale),int(711*scale)),

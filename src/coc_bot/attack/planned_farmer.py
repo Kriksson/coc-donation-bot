@@ -218,7 +218,11 @@ def run_planned_attack(farmer, *, automatic=False):
             abandoned=leave_unstarted_opponent(session)
         else:
             timeout=None if started else max(225.,farmer.config.farm_battle_timeout_seconds)
-            farmer.attack_nav.wait_for_battle_end(timeout=timeout,since=started or opponent_at)
+            options = {}
+            if (automatic and getattr(farmer, 'finish_after_star', False) is True and result
+                    and result.success and result.verified_taps > 0 and not result.uncertain_tap):
+                options['finish_after_star'] = True
+            farmer.attack_nav.wait_for_battle_end(timeout=timeout,since=started or opponent_at,**options)
         check_stop(session.client.stop_check)
         farmer._gs(GameState.RETURNING_HOME,'finish planned attack')
         returned=abandoned or farmer.attack_nav.return_home_from_attack()

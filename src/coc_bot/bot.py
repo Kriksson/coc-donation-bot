@@ -387,6 +387,12 @@ class DonationBot:
             self.tracker.tick();return
         order=getattr(self,'_fleet_work_order',lambda:visit.order() if visit else tuple(work))()
         if visit and self._state in ('open_donation','donate'):order=()
+        paced_farm_due = getattr(self, '_fleet_farm_due', lambda: False)() is True
+        if paced_farm_due and self._state in ('scan_chat','scroll_chat'):
+            order = ('farm',) + tuple(name for name in order if name != 'farm')
+        elif getattr(self, '_fleet_farm_due_soon', lambda: False)() is True:
+            # Preserve the maintenance cursor and wait at a safe checkpoint.
+            order = tuple(name for name in order if name == 'requests')
         from coc_bot.accounts.store import read
         layout=read(self.config.data_dir/'layouts/state.json',{})
         from coc_bot.layouts.runner import REVISION
@@ -417,6 +423,7 @@ class DonationBot:
         # checklist reaches requests. Check once before other scheduled work.
         if (visit and order and self._state in ('scan_chat', 'scroll_chat')
                 and getattr(self, '_fleet_task_driven', False) and not self._farm_requested
+                and not paced_farm_due
                 and not getattr(self, '_visit_request_checked', False)
                 and not (layout_pending or upgrade_pending)):
             self._visit_request_checked = True
@@ -430,7 +437,7 @@ class DonationBot:
             self._visit_repeat=False;self._visit_reason=None;self._visit_retry_at=None
             urgent=(name=='upgrades' and upgrade_pending or name=='layouts' and
                     (layout.get('pending') or layout.get('last_survey',{}).get('payment')))
-            deferred=visit.deferred(name) if visit and not urgent else None
+            deferred=visit.deferred(name) if visit and not urgent and not (name=='farm' and paced_farm_due) else None
             if deferred:
                 self._visit_reason=deferred.get('reason');self._visit_retry_at=deferred['retry_at']
                 attempted=False
@@ -723,6 +730,9 @@ class DonationBot:
             self._visit_reason='Attack retry cooldown'
             return False
         if self.config.dry_run:return False
+        paced_due = getattr(self, '_fleet_farm_due', None)
+        if paced_due is not None:
+            return paced_due()
         return self._resource_farm_due()
 
     def _check_chat_between_attacks(self):
@@ -772,6 +782,10 @@ class DonationBot:
             return False
 
         logger.info('Pausing donations for resource refill attack (manual={})',manual)
+        pace = getattr(self, '_fleet_record_farm', None)
+        started = time.time()
+        if pace is not None:
+            pace(started=started)
         self._set_state("farm")
         self.game_state.transition(GameState.HOME, reason="farm start")
         self.set_mode(BotMode.HOME)
@@ -779,6 +793,8 @@ class DonationBot:
         with measure_task(getattr(self.config, 'account_tag', None), 'home_attack') as timing:
             result = self.farmer.run_one_attack()
             timing['outcome'] = 'reported_success' if result.success else 'incomplete'
+        if pace is not None:
+            pace(started=started, completed=result.success)
         from coc_bot.vision import recorder
 
         if not self._stop_requested:
@@ -818,7 +834,7 @@ class DonationBot:
         self.game_state.transition(GameState.CLAN_CHAT if getattr(self.config,'donation_enabled',True) else GameState.HOME, reason="farm done")
         self._set_state("scan_chat")
         self._last_anti_idle = time.monotonic()
-        if not manual and not self._stop_requested:
+        if not manual and not self._stop_requested and pace is None:
             state=self._resource_state()
             if result.success:
                 from coc_bot.runtime.resource_farming import record_outcome,decide

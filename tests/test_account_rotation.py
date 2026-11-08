@@ -47,6 +47,21 @@ class RotationTests(unittest.TestCase):
         self.rotation.resume(1300)
         self.assertEqual(self.rotation.load()['visits'][self.other['id']]['next_farm_at'],1500)
 
+    def test_due_attack_can_precede_a_future_maintenance_visit(self):
+        self.store.update(self.other['id'], 'Test', ['upgrading', 'farming'])
+        self.configure(task_driven=True, attack_target_per_hour=3, finish_after_star=True)
+        state = self.rotation.load()
+        state['visits'][self.other['id']] = {'next_visit_at': 2000}
+        write(self.rotation.path, state)
+        self.assertEqual(self.rotation.next_account(100, current_id=self.main['id'])['id'], self.other['id'])
+        self.rotation.record_farming(self.other['id'], 100, started=100)
+        self.assertIsNone(self.rotation.next_account(101, current_id=self.main['id']))
+        self.rotation.record_farming(self.other['id'], 250, started=100, completed=True)
+        visit = self.rotation.load()['visits'][self.other['id']]
+        self.assertEqual((visit['last_verified_farm_at'], visit['next_farm_at']), (250, 1300))
+        self.assertIsNone(self.rotation.next_account(1299, current_id=self.main['id']))
+        self.assertEqual(self.rotation.next_account(1300, current_id=self.main['id'])['id'], self.other['id'])
+
     def test_long_goal_visit_does_not_starve_other_accounts_for_hours(self):
         self.configure();self.rotation.complete(self.other['id'],1000,500)
         self.assertEqual(self.rotation.load()['next_watch_seconds'],300)
