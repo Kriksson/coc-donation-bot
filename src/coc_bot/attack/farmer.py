@@ -208,7 +208,7 @@ class AttackFarmer:
                 self._gs(GameState.RETURNING_HOME, "matchmaking timeout")
                 self.attack_nav.return_home_from_attack()
                 self._abort_to_chat()
-                return FarmResult(False, "matchmaking timeout")
+                return FarmResult(False, self.attack_nav.match_failure_reason or "matchmaking timeout")
 
         self._gs(GameState.IN_BATTLE, "battlefield ready")
         if self._stopping():

@@ -40,6 +40,7 @@ class AttackNavigator:
         self.stop_check: Callable[[], bool] | None = None
         self.battle_completion = BattleCompletionDetector()
         self.last_battle_end_reason = "not_waited"
+        self.match_failure_reason = None
 
     def _stopping(self) -> bool:
         return bool(self.stop_check and self.stop_check())
@@ -471,8 +472,10 @@ class AttackNavigator:
         return battlefield_ready(frame, stop_check=self.stop_check)
 
     def wait_for_battle(self, timeout: float | None = None) -> bool:
+        from coc_bot.attack.search_gold import collect_search_gold, gold_shortfall_close
         from coc_bot.vision.battle_menu import army_confirmation_button, home_build_control_visible
 
+        self.match_failure_reason = None
         timeout = timeout if timeout is not None else float(self.config.farm_match_timeout_seconds)
         deadline = time.monotonic() + timeout
         last_screen = "unknown"
@@ -510,6 +513,21 @@ class AttackNavigator:
             if self.battlefield_ready(frame):
                 logger.info("Battlefield verified: independent combat controls visible (screen={})", screen.value)
                 return True
+            gold_close = gold_shortfall_close(frame) if screen == ScreenType.POPUP else None
+            if gold_close is not None:
+                self._save_matchmaking_frame(frame, 'gold-shortfall')
+                self.match_failure_reason = 'Not enough gold for matchmaking; gem offer skipped'
+                fresh = self.capture.screenshot()
+                if gold_shortfall_close(fresh) != gold_close or self._stopping():
+                    return False
+                self.input.tap(*gold_close, jitter=0)
+                logger.info('Matchmaking gold shortfall — closed gem offer')
+                if self._sleep(.7) or retried or deadline - time.monotonic() < 25:
+                    return False
+                if not collect_search_gold(self):
+                    logger.warning('Matchmaking blocked: no verified Gold Mine gain')
+                    return False
+                logger.info('Matchmaking gold collected — retrying once')
             # The Attack chip alone can false-match the battlefield. Only two
             # consecutive village frames with the independent Build control
             # permit restarting a search that has returned to Home.
@@ -517,13 +535,15 @@ class AttackNavigator:
                 home_frames += 1
             else:
                 home_frames = 0
-            if home_frames >= 2:
-                self._save_matchmaking_frame(frame, 'returned-home')
-                if self._stopping() or retried or deadline - time.monotonic() < 15:
-                    logger.warning('Matchmaking ended at verified Home without an opponent')
-                    return False
-                logger.warning('Matchmaking returned to verified Home — retrying once')
+            if gold_close is not None or home_frames >= 2:
+                if gold_close is None:
+                    self._save_matchmaking_frame(frame, 'returned-home')
+                    if self._stopping() or retried or deadline - time.monotonic() < 15:
+                        logger.warning('Matchmaking ended at verified Home without an opponent')
+                        return False
+                    logger.warning('Matchmaking returned to verified Home — retrying once')
                 retried = True
+                self.match_failure_reason = None
                 if not self.open_attack_menu() or not self.start_unranked_battle():
                     return False
                 home_frames = army_taps = 0

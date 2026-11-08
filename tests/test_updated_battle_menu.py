@@ -204,6 +204,40 @@ class UpdatedMenuTests(unittest.TestCase):
             self.assertTrue(nav.wait_for_battle(timeout=30))
         nav.open_attack_menu.assert_not_called()
 
+    def test_matchmaking_gold_shortfall_closes_offer_before_verified_free_collection(self):
+        for collected in (True, False):
+            with self.subTest(collected=collected):
+                nav = self.navigator(True)
+                nav.classify = MagicMock(side_effect=[ScreenType.POPUP, ScreenType.BATTLE])
+                nav.battlefield_ready = MagicMock(side_effect=[False, True])
+                nav.open_attack_menu = MagicMock(return_value=True)
+                nav.start_unranked_battle = MagicMock(return_value=True)
+                nav._save_matchmaking_frame = MagicMock()
+                close = (1306, 320)
+                with patch('coc_bot.vision.battle_menu.army_confirmation_button', return_value=None), \
+                        patch('coc_bot.attack.search_gold.gold_shortfall_close', return_value=close), \
+                        patch('coc_bot.attack.search_gold.collect_search_gold', return_value=collected), \
+                        patch.object(nav.classifier, 'find_reload_game_button', return_value=None):
+                    self.assertEqual(nav.wait_for_battle(timeout=40), collected)
+                nav.input.tap.assert_called_once_with(*close, jitter=0)
+                self.assertEqual(nav.start_unranked_battle.call_count, int(collected))
+                self.assertEqual(nav.match_failure_reason is None, collected)
+
+    def test_free_gold_collection_requires_stable_home_balance_and_unchanged_gems(self):
+        from coc_bot.attack.search_gold import collect_search_gold
+
+        for gained, gem_balance, ready in ((5000, 1852, True), (5000, 1850, False), (1195, 1852, False)):
+            with self.subTest(gained=gained, gems=gem_balance):
+                nav = self.navigator()
+                nav.config.account_town_hall = 16
+                nav.classify = MagicMock(return_value=ScreenType.HOME)
+                balances = [1195, 1852] * 2 + [gained, gem_balance] * 5
+                with patch('coc_bot.attack.search_gold.home_build_control_visible', return_value=True), \
+                        patch('coc_bot.attack.search_gold.balance_amount', side_effect=balances), \
+                        patch('coc_bot.attack.search_gold.gold_bubble', return_value=(1637, 547)):
+                    self.assertEqual(collect_search_gold(nav), ready)
+                nav.input.tap.assert_called_once_with(1637, 547, jitter=0)
+
     def reward_frame(self):
         frame=self.frame()
         frame[:]=(40,90,150)

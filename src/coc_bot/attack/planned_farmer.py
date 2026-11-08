@@ -169,8 +169,10 @@ def run_planned_attack(farmer, *, automatic=False):
     farmer._gs(GameState.ATTACK_MENU,'open unranked attack')
     if not farmer.attack_nav.open_attack_menu(): return FarmResult(False,'could not open Attack menu')
     farmer._gs(GameState.MATCHMAKING,'start unranked Battle')
-    if not farmer.attack_nav.start_unranked_battle() or not farmer.attack_nav.wait_for_battle():
+    if not farmer.attack_nav.start_unranked_battle():
         return FarmResult(False,'could not confirm opponent')
+    if not farmer.attack_nav.wait_for_battle():
+        return FarmResult(False, farmer.attack_nav.match_failure_reason or 'could not confirm opponent')
     farmer._gs(GameState.IN_BATTLE,'survey opponent')
     opponent_at=time.time()
     remember_camera(session,home)
