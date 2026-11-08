@@ -37,20 +37,17 @@ class BattleCompletionDetector:
         small = cv2.resize(frame, (960, 540), interpolation=cv2.INTER_AREA)
         gray = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
         button = self._match(gray, "results_return_home", (370, 420, 590, 520))
-        # Match the gold lettering, not the changing village and army portraits
-        # behind it. Grayscale correlation rejected real wins and losses even
-        # when the exact label and Return Home button were present.
-        spent = self._match(_gold_letters(small), "results_troops_expended",
-                            (340, 320, 620, 400), gold=True)
-        if spent is None:
-            # The current native font raster differs slightly on some results
-            # screens. Match its inspected lettering at the same threshold;
-            # never lower the spatial, button or two-observation safeguards.
-            spent = self._match(_gold_letters(small), "results_troops_expended_current",
-                                (340, 320, 620, 400), gold=True)
         if button is None:
             return None
         self.last_reason = "missing_troops_label"
+        # Match the gold lettering, not the changing village and army portraits
+        # behind it. Native raster variants use the same match threshold.
+        gold = _gold_letters(small)
+        for name in ("results_troops_expended", "results_troops_expended_current",
+                     "results_troops_expended_defeat"):
+            spent = self._match(gold, name, (340, 320, 620, 400), gold=True)
+            if spent is not None:
+                break
         if spent is None:
             return None
         bx, by, bw, bh = button

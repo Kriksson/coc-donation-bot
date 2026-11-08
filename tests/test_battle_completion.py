@@ -20,6 +20,16 @@ def result_frame():
 
 
 class BattleCompletionTests(TestCase):
+    def test_native_defeat_label_matches_without_relaxing_return_home(self):
+        frame = result_frame()
+        label = cv2.imread(str(ASSETS/'results_troops_expended_defeat.png'))
+        frame[348:368, 428:542] = 0
+        frame[348:361, 428:542] = label
+        detector = BattleCompletionDetector()
+        self.assertIsNotNone(detector.detect(frame))
+        frame[420:520, 370:590] = 0
+        self.assertIsNone(detector.detect(frame))
+
     def test_current_native_one_star_victory_is_recognized_without_timer_fallback(self):
         frame=cv2.imread(str(Path(__file__).parent/'fixtures/battle_completion/one-star-victory.png'))
         for size in ((1853,1048),(960,540),(1280,724)):
