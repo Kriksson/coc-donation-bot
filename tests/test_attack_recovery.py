@@ -12,11 +12,12 @@ import sys
 import numpy as np
 import cv2
 
-from coc_bot.adb.client import AdbStopped
+from coc_bot.adb.client import AdbError, AdbStopped
 from coc_bot.attack.recovery import (AttackCheckpoint, RecoveryRequired, atomic_json, recover_attack,
                                      finish_attack, accept_home_zoom_limit, accept_automatic_home_camera)
 from coc_bot.runtime.tracker import RuntimeTracker
 from coc_bot.config import load_config
+from coc_bot.vision.screens import ScreenType
 
 
 class CheckpointTests(TestCase):
@@ -166,6 +167,72 @@ class RecoveryTests(TestCase):
             with self.assertRaises(RecoveryRequired): recover_attack(self.session,tracker=self.tracker)
         self.assertEqual(self.checkpoint.load()['attempts'],3)
         self.session.input.tap.assert_not_called(); self.session.input.back.assert_not_called()
+
+    def stalled_results(self):
+        self.checkpoint.update('returning_home', attempts=3)
+        self.nav.classify.return_value = ScreenType.BATTLE_RESULTS
+        self.nav.classifier.looks_like_results_side_silhouettes.return_value = True
+
+    def test_stalled_results_relaunch_then_verify_account_before_completion(self):
+        self.stalled_results()
+        with patch('coc_bot.adb.app.AppController') as app, \
+                patch('coc_bot.accounts.navigation.verify_session') as verify:
+            def launch():
+                self.assertTrue(self.checkpoint.load()['relaunch_attempted'])
+                self.mocks[2].return_value = True
+                self.session.capture.screenshot.side_effect = [AdbError('loading'), self.frame, self.frame, self.frame]
+                self.nav.classifier._clan_chat_anchor_visible.side_effect = [False, True]
+
+            app.return_value.launch.side_effect = launch
+            self.tracker.mark_farm_success.side_effect = lambda **_: verify.assert_called_once()
+            self.assertTrue(recover_attack(self.session, tracker=self.tracker))
+        app.return_value.force_stop.assert_called_once()
+        app.return_value.launch.assert_called_once()
+        self.assertFalse(self.checkpoint.path.exists())
+        self.session.input.tap.assert_not_called()
+        self.session.input.back.assert_not_called()
+
+    def test_relaunch_timeout_preserves_receipt_and_does_not_retry(self):
+        self.stalled_results()
+        self.session.config = replace(self.config, game_load_timeout_seconds=2)
+        with patch('coc_bot.adb.app.AppController') as app, \
+                patch('coc_bot.progression.home.recover_home_overlay'):
+            with self.assertRaisesRegex(RecoveryRequired, 'relaunched but Home'):
+                recover_attack(self.session, tracker=self.tracker)
+            with self.assertRaises(RecoveryRequired):
+                recover_attack(self.session, tracker=self.tracker)
+        app.return_value.force_stop.assert_called_once()
+        self.assertEqual(self.checkpoint.load()['phase'], 'returning_home')
+        self.tracker.mark_farm_success.assert_not_called()
+
+    def test_relaunch_requires_results_on_fresh_frame(self):
+        self.stalled_results()
+        self.nav.classify.side_effect = [ScreenType.BATTLE_RESULTS, ScreenType.BATTLE]
+        with patch('coc_bot.adb.app.AppController') as app, self.assertRaises(RecoveryRequired):
+            recover_attack(self.session, tracker=self.tracker)
+        app.assert_not_called()
+
+    def test_pending_upgrade_blocks_relaunch(self):
+        self.stalled_results()
+        atomic_json(self.config.data_dir/'upgrades/state.json', {'pending': {'id': 'upgrade'}})
+        with patch('coc_bot.adb.app.AppController') as app, self.assertRaises(RecoveryRequired):
+            recover_attack(self.session, tracker=self.tracker)
+        app.assert_not_called()
+
+    def test_startup_recovers_returning_attack_before_starting_worker(self):
+        from coc_bot.bot import DonationBot
+
+        self.stalled_results()
+        bot = Mock()
+        bot.config = self.config
+        bot.should_stop.return_value = False
+        with patch('coc_bot.attack.planned_farmer.context', return_value=self.session), \
+                patch('coc_bot.attack.recovery.recover_attack') as recover, \
+                patch('coc_bot.vision.recorder.stop'):
+            recover.side_effect = lambda *args, **kwargs: bot._run_inner.assert_not_called()
+            DonationBot.run_owned(bot)
+        recover.assert_called_once_with(self.session, tracker=bot.tracker, verify_account=True)
+        bot._run_inner.assert_called_once()
 
     def test_generic_screen_labels_never_authorize_back(self):
         self.nav.classify.return_value='matchmaking'

@@ -251,8 +251,15 @@ class DonationBot:
             self.__dict__.pop('_verified_handoff',None)
             if not self._layout_runner().recover():
                 raise RuntimeError('Interrupted layout edit could not be safely recovered')
-        from coc_bot.accounts.navigation import verify_session
-        verify_session(self, self.should_stop)
+        from coc_bot.attack.recovery import can_recover_returning_attack, recover_attack
+        if can_recover_returning_attack(self.config):
+            from coc_bot.attack.planned_farmer import context
+            # Account verification needs Home. For a stalled return, verify
+            # the account inside recovery before closing its attack receipt.
+            recover_attack(context(self.farmer), tracker=self.tracker, verify_account=True)
+        else:
+            from coc_bot.accounts.navigation import verify_session
+            verify_session(self, self.should_stop)
         self._start_recorder()
         try:
             self._run_inner()

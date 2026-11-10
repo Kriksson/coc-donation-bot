@@ -16,7 +16,7 @@ import cv2
 from loguru import logger
 
 from coc_bot.attack.army import check_stop
-from coc_bot.vision.screens import BotMode
+from coc_bot.vision.screens import BotMode, ScreenType
 
 
 class RecoveryRequired(ValueError):
@@ -244,13 +244,90 @@ def accept_automatic_home_camera(session):
     return True
 
 
-def recover_attack(session, *, tracker=None):
+def can_recover_returning_attack(config):
+    """A post-battle relaunch must not interrupt a different pending action."""
+    if config.dry_run:
+        return False
+    state = AttackCheckpoint(config).load()
+    if state is None or state['phase'] != 'returning_home':
+        return False
+    from coc_bot.accounts.store import read
+    from coc_bot.builder_base.runner import pending as builder_pending
+    layout = read(config.data_dir/'layouts/state.json', {})
+    return not (
+        builder_pending(config)
+        or read(config.data_dir/'builder_base/upgrades.json', {}).get('pending')
+        or read(config.data_dir/'upgrades/state.json', {}).get('pending')
+        or layout.get('pending') or layout.get('last_survey', {}).get('payment')
+        or read(config.data_dir/'reinforcements/state.json', {}).get('status')
+        in ('send_pending', 'send_unconfirmed')
+    )
+
+
+def _relaunch_after_results(session, checkpoint, frame):
+    from coc_bot.adb.app import AppController
+    from coc_bot.adb.client import AdbError, AdbStopped
+    from coc_bot.vision.battle_menu import active_battle_ready, battlefield_ready, home_build_control_visible
+    from coc_bot.progression.home import recover_home_overlay
+
+    stop = session.client.stop_check
+    state = checkpoint.load()
+    if (frame is None or not state or state.get('relaunch_attempted', False) is not False
+            or not can_recover_returning_attack(session.config)):
+        return False
+    nav = session.attack_nav
+
+    def finished(image):
+        return (nav.classify(image, mode=BotMode.ATTACK) == ScreenType.BATTLE_RESULTS
+                and nav.classifier.looks_like_results_side_silhouettes(image)
+                and not battlefield_ready(image, stop_check=stop)
+                and not active_battle_ready(image, stop_check=stop))
+
+    check_stop(stop)
+    if not finished(frame):
+        return False
+    session._sleep(1.)
+    check_stop(stop)
+    fresh = session.capture.screenshot()
+    if fresh.shape != frame.shape or not finished(fresh):
+        return False
+    check_stop(stop)
+    # Reserve the single restart before sending it so a worker restart cannot
+    # repeat it. Preserve the existing attack and camera receipts.
+    checkpoint.update(relaunch_attempted=True)
+    check_stop(stop)
+    logger.warning('Stuck on finished battle results — relaunching Clash once')
+    app = AppController(session.client, session.config, session.capture)
+    app.stop_check = stop
+    app.force_stop()
+    check_stop(stop)
+    app.launch()
+    deadline = time.monotonic() + session.config.game_load_timeout_seconds
+    while time.monotonic() < deadline:
+        check_stop(stop)
+        try:
+            frame = session.capture.screenshot()
+        except AdbStopped:
+            raise
+        except AdbError:
+            pass  # Capture can be unavailable briefly while Clash starts.
+        else:
+            check_stop(stop)
+            if home_build_control_visible(frame):
+                return True
+            if nav.donation_nav is not None:
+                recover_home_overlay(nav.donation_nav, frame)
+        session._sleep(1.)
+    raise RecoveryRequired('Clash relaunched but Home could not be verified. '
+                           'Open your home village manually, then press Start. No deployment was replayed.')
+
+
+def recover_attack(session, *, tracker=None, verify_account=False):
     """Recover only navigation; no army selection, map inputs or upgrade actions.
 
-    Unknown screens exhaust three observation attempts and fail closed. Starting
-    again after manually reaching home can finish a blocked recovery. Stop never
-    triggers cleanup taps. Recovery in battle waits up to 240 seconds for two
-    matching results frames; there is deliberately no timer-based Return tap.
+    Unknown screens exhaust three observation attempts and fail closed. Stalled
+    results can trigger one Clash relaunch per attack. Stop never triggers
+    cleanup taps, and a live battle is allowed to finish.
     """
     if not pending(session.config):
         return False
@@ -269,6 +346,7 @@ def recover_attack(session, *, tracker=None):
                                           battlefield_ready, active_battle_ready, reward_continue_button)
     from coc_bot.attack.planned_farmer import restore_camera
     deadline = time.monotonic()+240
+    frame = None
     previous = None
     previous_at = 0.
     returning = state['phase'] in ('returning_home', 'home_confirmed')
@@ -296,6 +374,9 @@ def recover_attack(session, *, tracker=None):
             home = home_build_control_visible(frame)
         if home:
             check_stop(stop)
+            if verify_account:
+                from coc_bot.accounts.navigation import verify_session
+                verify_session(session, stop)
             try:
                 restore_camera(session)
             except ValueError as exc:
@@ -370,5 +451,7 @@ def recover_attack(session, *, tracker=None):
         folder.mkdir(parents=True, exist_ok=True)
         cv2.imwrite(str(folder/'attack-recovery-unknown.png'), frame)
         session._sleep(2.)
+    if _relaunch_after_results(session, checkpoint, frame):
+        return recover_attack(session, tracker=tracker, verify_account=True)
     raise RecoveryRequired('Attack recovery paused: game screen could not be verified. '
                            'Open your home village manually, then press Start. No deployment was replayed.')
