@@ -28,6 +28,26 @@ class LabPriorityTests(TestCase):
         self.assertEqual([r['name'] for r in sorted(rows,key=priority)],
                          ['Laboratory','Cannon','Army Camp','Town Hall'])
 class ProgressionPolicyTests(TestCase):
+    def test_unreadable_laboratory_reports_the_actual_blocker(self):
+        from coc_bot.progression.runner import ProgressionRunner
+        with tempfile.TemporaryDirectory() as folder:
+            runner=ProgressionRunner.__new__(ProgressionRunner)
+            runner.config=SimpleNamespace(data_dir=Path(folder))
+            runner.path=Path(folder)/'state.json'
+            runner.stop=None;runner.capture=Mock();runner.reader=Mock();runner.close=Mock()
+            runner.capture.screenshot.return_value=np.zeros((1080,1920,3),np.uint8)
+            runner.reader.filters_open.return_value=False
+            runner.reader.menu_kind.return_value=None
+            runner.reader.availability.return_value=None
+            runner.open_menu=Mock(return_value=runner.capture.screenshot.return_value)
+            runner.scan=Mock(return_value={'complete':True,'balances':{'elixir':6_457_750},
+                'rows':[{'name':'Dragon','cost':1_500_000,'currency':'elixir','point':(1651,240)}]})
+            report=runner.run('research',execute=True)
+            self.assertEqual(report['status'],'waiting')
+            self.assertIn('доступность лаборатории',report['message'])
+            self.assertEqual(report['recommendations'][0]['skip'],
+                             'Upgrade-slot availability could not be verified')
+
     def test_research_padlock_requires_the_actual_lock_and_build_menu(self):
         reader=ProgressionReader()
         frame=cv2.imread(str(FIXTURES/'barracks-red-price-list.png'))

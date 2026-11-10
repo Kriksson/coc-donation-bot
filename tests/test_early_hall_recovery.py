@@ -28,6 +28,11 @@ class EarlyHallRecoveryTests(TestCase):
         nav.capture.screenshot.return_value=frame
         reader=HomeResources(nav);self.assertTrue(reader.home(frame))
         reader.storage_capacity=Mock(side_effect=lambda f,r:8500 if r in ('gold','elixir') else None)
+        # Model the tooltip appearing after each row tap and disappearing after
+        # its verified close; capacity OCR itself is mocked independently.
+        reader.storage_tooltip_visible=Mock(side_effect=[False,False,False,True,True,True,False,
+                                                          False,False,False,True,True,True,False,
+                                                          False,False,False,False])
         with patch('coc_bot.progression.home.ensure_home',return_value=True),patch('coc_bot.stop.interrupted_sleep'):
             result=reader.observe(SimpleNamespace(account_town_hall=2))
         self.assertEqual(result['resources'],['gold','elixir'])

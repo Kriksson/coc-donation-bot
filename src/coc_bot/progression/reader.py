@@ -11,6 +11,20 @@ def row_key(row):
     return (compact(row['name']), row.get('new'), row.get('level'), row.get('cost'), row.get('currency'))
 
 
+def unreadable_building_title(image, letters, stop=None):
+    """Recover the observed Hero Hall title only when its entire text is visible."""
+    count, _, stats, _ = cv2.connectedComponentsWithStats(letters)
+    parts = [(x, y, w, h) for x, y, w, h, area in stats[1:]
+             if h >= image.shape[0] * .25 and area >= 12]
+    if not parts:
+        return ''
+    right = max(x + w for x, y, w, h in parts)
+    if right >= image.shape[1] - 8:
+        return ''
+    label = text(image[:, :min(image.shape[1], right + 11)], stop=stop, psm=13)
+    return 'Hero Hall' if compact(label) == 'herohall' else ''
+
+
 def wall_quantity(name, letters, *, extra_templates=None):
     """Read the suffix's actual glyphs; never translate an OCR '&' into 6."""
     stacked=re.fullmatch(r'(?i)\s*wall\s*[x×]\s*(\S{1,3})\s*',name)
@@ -228,10 +242,13 @@ class ProgressionReader(UpgradeReader):
             letters = cv2.inRange(hsv,(0,0,205),(180,80,255)) | cv2.inRange(hsv,(35,80,170),(90,255,255))
             name = text(255-cv2.copyMakeBorder(letters,6,6,6,6,cv2.BORDER_CONSTANT,value=0), stop=self.stop)
             if not name.strip():name=text(title,stop=self.stop)
+            if not name.strip():name=text(title,stop=self.stop,psm=13)
+            if not name.strip():name=unreadable_building_title(title,letters,stop=self.stop)
             quantity=wall_quantity(name,letters,extra_templates=self.wall_digit_templates())
             if quantity is not None and re.match(r'(?i)^\s*wall\s*[x×]',name):name='Wall'
             name = re.sub(r'(?i)\s+[x×]\s*\d+(?:\s+[\W\d_]+)?\s*$','',name).strip(' _=|.;—')
-            name = {'clancastile':'Clan Castle','cannnon':'Cannon'}.get(compact(name),name)
+            name = {'clancastile':'Clan Castle','cannnon':'Cannon',
+                    'archertowerr':'Archer Tower'}.get(compact(name),name)
             detail = text(frame[a+round(h*.035):min(b, a+round(h*.060)), round(w*.775):round(w*.85)], stop=self.stop)
             price_image = frame[a+round(h*.026):min(b,a+round(h*.065)), round(w*.85):round(w*.980)]
             price = resource_amount(price_image,self.stop)
@@ -271,8 +288,11 @@ class ProgressionReader(UpgradeReader):
     def selected_filter(self, frame):
         if not self.filters_open(frame):
             raise ValueError('Build filter controls could not be verified')
-        for x,y in ((.418,.24),(.561,.24),(.704,.24),(.418,.397),(.561,.397),
-                    (.418,.495),(.561,.495),(.704,.495)):
+        # Cost Max/Min are sorting controls, but either one also hides the
+        # Suggested upgrades section. Treat them as part of the state that
+        # must be cleared before the full list can be called unfiltered.
+        for x,y in ((.418,.24),(.561,.24),(.704,.24),(.418,.397),(.561,.397),(.704,.397),
+                    (.418,.495),(.561,.495),(.704,.495),(.418,.65),(.561,.65)):
             image = crop(frame,(x-.062,y-.033,x+.062,y+.033))
             yellow = cv2.inRange(cv2.cvtColor(image,cv2.COLOR_BGR2HSV),(15,110,210),(36,255,255))
             if yellow.mean()/255 > .40:

@@ -1,4 +1,13 @@
 import React from 'react';
+import {presentMessage} from './i18n';
+
+export function MessageText({value}:{value:unknown}){
+  const presented=presentMessage(value);
+  if(!presented.text)return null;
+  return <span className="message-rendered">{presented.text}{presented.original&&<details className="message-details">
+    <summary>Технические подробности</summary><pre>{presented.original}</pre>
+  </details>}</span>;
+}
 
 const paths:Record<string,React.ReactNode>={
   overview:<><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></>,
@@ -36,29 +45,32 @@ export function EmptyState({icon='library',children}:{icon?:string;children:Reac
 }
 
 export const pageIcons:Record<string,string>={Dashboard:'overview',Accounts:'accounts',Attacks:'swords',Settings:'settings',Setup:'setup',Library:'library',Diagnostics:'tools'};
-export const pageLabels:Record<string,string>={Dashboard:'Overview',Accounts:'Accounts',Attacks:'Attacks',Settings:'Settings',Setup:'Setup',Library:'Library',Diagnostics:'Tools'};
+export const pageLabels:Record<string,string>={Dashboard:'Обзор',Accounts:'Аккаунты',Attacks:'Атаки',Settings:'Настройки',Setup:'Настройка',Library:'Библиотека',Diagnostics:'Инструменты'};
 
 export type ResourceStatus={enabled:boolean;start_percent:number;target_percent:number;status:string;message?:string;
-  observed_at?:number;observation?:{resources:string[];balances:Record<string,number>;capacities:Record<string,number>}};
-const number=new Intl.NumberFormat(undefined,{notation:'compact',maximumFractionDigits:1});
-export function ResourceLevels({data}:{data?:ResourceStatus}){
-  const labels:Record<string,string>={gold:'Gold',elixir:'Elixir',dark_elixir:'Dark elixir'};
+  trigger_mode?:string;interval_seconds?:number;
+  observed_at?:number;retry_at?:number;observation?:{resources:string[];balances:Record<string,number>;capacities:Record<string,number>}};
+export function ResourceLevels({data,village='home'}:{data?:ResourceStatus;village?:'home'|'builder'}){
+  const labels:Record<string,string>={gold:'Золото',elixir:'Эликсир',dark_elixir:'Тёмный эликсир'};
   const observation=data?.observation;
   return <section className="resource-card panel">
-    <div className="panel-label"><span title={data?.observed_at?'Last checked '+new Date(data.observed_at*1000).toLocaleString():undefined}>Resources</span><span className="badge">{data?.enabled?`${data.start_percent}% → ${data.target_percent}%`:'Refill off'}</span></div>
+    <div className="panel-label"><span title={data?.observed_at?'Последняя проверка: '+new Date(data.observed_at*1000).toLocaleString('ru-RU'):undefined}>{village==='builder'?'Деревня строителя':'Основная деревня'}</span><span className="badge">{data?.enabled?(data.trigger_mode==='interval'?`Каждые ${(data.interval_seconds||1200)/60} мин`:`${data.start_percent}% → ${data.target_percent}%`):'Пополнение выключено'}</span></div>
     {observation?.resources?.length?<div className="resource-levels">{observation.resources.map(resource=>{
       const balance=observation.balances[resource],capacity=observation.capacities[resource];
-      const known=Number.isFinite(balance)&&Number.isFinite(capacity)&&capacity>0;
+      const balanceKnown=Number.isFinite(balance)&&balance>=0;
+      const known=balanceKnown&&Number.isFinite(capacity)&&capacity>0;
       const percent=known?Math.min(100,Math.max(0,balance/capacity*100)):0;
       return <div className={'resource '+resource} key={resource}>
         <div className="resource-caption"><span><i/>{labels[resource]||resource}</span><strong>{known?Math.round(percent)+'%':'—'}</strong></div>
         <div className="resource-track" role={known?'meter':undefined} aria-label={labels[resource]||resource} aria-valuemin={known?0:undefined} aria-valuemax={known?100:undefined}
-          aria-valuenow={known?Math.round(percent):undefined} aria-valuetext={known?`${balance.toLocaleString()} of ${capacity.toLocaleString()}`:'Not yet read'}>
+          aria-valuenow={known?Math.round(percent):undefined} aria-valuetext={known?`${balance.toLocaleString('ru-RU')} из ${capacity.toLocaleString('ru-RU')}`:balanceKnown?`${balance.toLocaleString('ru-RU')}; вместимость не считана`:'Ещё не считано'}>
           <span style={{width:percent+'%'}}/>
-          {data?.enabled&&<i style={{left:Math.min(100,Math.max(0,data.target_percent))+'%'}}/>}
-        </div><div className="resource-amount">{known?<>{number.format(balance)} <span>/ {number.format(capacity)}</span></>:'Not yet read'}</div>
+          {data?.enabled&&data.trigger_mode!=='interval'&&<i style={{left:Math.min(100,Math.max(0,data.target_percent))+'%'}}/>}
+        </div><div className="resource-amount">{known?<>{balance.toLocaleString('ru-RU')} <span>/ {capacity.toLocaleString('ru-RU')}</span></>:balanceKnown?<>{balance.toLocaleString('ru-RU')} <span>· Вместимость не считана</span></>:'Ещё не считано'}</div>
       </div>;
-    })}</div>:<EmptyState icon="refresh">Waiting for a resource check</EmptyState>}
-    {data?.message&&<div className="resource-status" role="status"><span className={'status-dot '+(data.status==='refilling'?'working':'')}/>{data.message}</div>}
+    })}</div>:<EmptyState icon="refresh">Ожидание проверки ресурсов</EmptyState>}
+    {data?.observed_at&&<p className="resource-checked">Проверено {new Date(data.observed_at*1000).toLocaleString('ru-RU')}</p>}
+    {data?.retry_at&&data.retry_at*1000>Date.now()&&<p className="resource-checked">Следующая попытка после {new Date(data.retry_at*1000).toLocaleTimeString('ru-RU')}</p>}
+    {data?.message&&<div className="resource-status" role="status"><span className={'status-dot '+(data.status==='refilling'?'working':'')}/><MessageText value={data.message}/></div>}
   </section>;
 }

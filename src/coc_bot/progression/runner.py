@@ -44,17 +44,34 @@ class ProgressionRunner(UpgradeRunner):
         if not opened:
             self.input.tap(round(w*.758),round(h*.032),jitter=0)
             if self.wait(): return None
-        for _ in range(9):
+        # Check the eleven known button positions, then allow one final read to
+        # prove the last selected toggle cleared.
+        for _ in range(12):
             frame = self.capture.screenshot()
             if self.stopped(): return None
             point = self.reader.selected_filter(frame)
             if point is None:
+                # Cost sorting hides Suggested upgrades but does not filter rows.
+                # Prove all resource/type filters clear twice before accepting it.
+                confirmed = self.capture.screenshot()
+                if self.stopped(): return None
+                if (not self.reader.filters_open(confirmed)
+                        or self.reader.selected_filter(confirmed) is not None):
+                    raise ValueError('Build filter state changed before closing')
                 self.input.tap(round(w*.27),round(h*.60),jitter=0)
                 if self.wait(): return None
                 frame = self.capture.screenshot()
-                if not self.reader.unfiltered_top(frame):
-                    raise ValueError('The unfiltered building list could not be verified')
-                return frame
+                if (self.reader.menu_kind(frame) != 'buildings'
+                        or not self.reader.unfiltered_top(frame)):
+                    raise ValueError('Suggested upgrades ordering could not be verified')
+                # Do not infer the top from a stationary swipe: a lost gesture
+                # in the middle of a cost-sorted list produces the same pixels.
+                confirmed = self.capture.screenshot()
+                if self.stopped(): return None
+                if (self.reader.menu_kind(confirmed) != 'buildings'
+                        or not self.reader.unfiltered_top(confirmed)):
+                    raise ValueError('Suggested upgrades ordering changed before inventory')
+                return confirmed
             self.input.tap(*point,jitter=0)
             if self.wait(): return None
         raise ValueError('Build filters did not clear')
@@ -329,17 +346,27 @@ class ProgressionRunner(UpgradeRunner):
             from coc_bot.accounts.store import read
             retries=read(self.path.with_name('candidate-retries.json'),{}) if kind=='buildings' else {}
             choices = []
+            rejected = []
             for row in candidates:
                 if time.time()<retries.get(self.retry_key(row),{}).get('retry_at',0):continue
                 if row.get('new') and time.time()<retries.get('construction',{}).get('retry_at',0):continue
                 if not row['cost'] or row['currency'] not in ('gold','elixir','dark_elixir'):
                     continue
                 candidate = Candidate(row['name'],row['cost'],row['currency'],row['point'])
-                if not self.eligibility(kind,candidate,inventory['balances'],free):choices.append(row)
+                rejection = self.eligibility(kind,candidate,inventory['balances'],free)
+                if not rejection:choices.append(row)
+                else:rejected.append({'name':row['name'],'cost':row['cost'],
+                                      'currency':row['currency'],'skip':rejection})
             if not choices:
+                research_message = ('Не удалось прочитать доступность лаборатории; исследование не запущено'
+                                    if free is None else
+                                    'Нет подходящего исследования: ' + '; '.join(dict.fromkeys(
+                                        item['skip'] for item in rejected))
+                                    if rejected else 'Не удалось прочитать названия или цены исследований')
                 return {'status':'waiting','message':'Build new structures first; waiting for resources or builders' if new
-                        else 'No eligible research; waiting for resources or a free Laboratory' if kind=='research'
+                        else research_message if kind=='research'
                         else 'No eligible building; Town Hall remains gated by the full inventory',
+                        'recommendations':rejected,
                         'availability':free,'town_hall_blockers':town_hall_blockers(inventory) if kind=='buildings' else []}
             self.target = choices[0]
             token = hashlib.sha256(json.dumps([kind,compact(self.target['name']),self.target['cost'],

@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from functools import lru_cache
 from pathlib import Path
 from coc_bot.builder_base.vision import BuilderReader
+from coc_bot.builder_base.research import supports_progression_research
 from coc_bot.builder_base.upgrades import BuilderUpgradeRunner,BUILDINGS,eligibility
 from coc_bot.progression.reader import ProgressionReader,row_key
 from coc_bot.progression.runner import ProgressionRunner
@@ -94,6 +95,31 @@ class BuilderProgressionRunner(BuilderUpgradeRunner):
         super().__init__(*args,**kwargs)
         self.reader=BuilderProgressionReader(self.stop)
         self.inventory=None;self.target=None;self.capacities={}
+        self._research_rows={}
+
+    @staticmethod
+    def _research_candidate_key(candidate):
+        return (compact(candidate.name),candidate.cost,candidate.currency,tuple(candidate.point))
+
+    def _inspect_research(self,kind,frame):
+        if kind=='research':
+            # BuilderReader.candidates intentionally returns the common
+            # Candidate type. Keep target-level evidence from the same frame
+            # alongside those candidates so eligibility cannot accept a
+            # Sneaky Archer row whose native level badge was unreadable.
+            self._research_rows={
+                (compact(row.get('name','')),row.get('cost'),row.get('currency'),tuple(row.get('point',()))):row
+                for row in self.reader.rows(frame)
+                if row.get('name') and type(row.get('cost')) is int and row.get('currency')
+            }
+        report=super().inspect(kind,frame)
+        if kind=='research':
+            for choice in report['recommendations']:
+                key=(compact(choice['name']),choice['cost'],choice['currency'],tuple(choice['point']))
+                row=self._research_rows.get(key)
+                if row is not None:
+                    choice['target_level']=row.get('target_level')
+        return report
 
     filter_resource=ProgressionRunner.filter_resource
 
@@ -201,6 +227,7 @@ class BuilderProgressionRunner(BuilderUpgradeRunner):
         return super().close()
 
     def inspect(self,kind,frame):
+        if kind=='research':return self._inspect_research(kind,frame)
         if self.target is None:return super().inspect(kind,frame)
         return ProgressionRunner.inspect(self,kind,frame)
 
@@ -225,7 +252,22 @@ class BuilderProgressionRunner(BuilderUpgradeRunner):
         return balance_amount(crop(frame,(.61,.174,.679,.208)),self.stop)
 
     def payment_receipt(self,kind,candidate,confirmation,report,frame):
-        if kind!='research' or type(confirmation.get('target_level')) is not int:return {}
+        if kind!='research':return {}
+        if compact(candidate.name)=='sneakyarcher':
+            level=confirmation.get('target_level')
+            if type(level) is not int or not 2<=level<=30:
+                raise ValueError('Sneaky Archer confirmation target level is unverified')
+            expected=(report.get('selected') or {}).get('target_level')
+            current=self._research_rows.get(self._research_candidate_key(candidate))
+            if (type(expected) is not int or level!=expected or current is None
+                or current.get('target_level')!=expected):
+                raise ValueError('Sneaky Archer confirmation target changed after the verified research row')
+            balances=report.get('balances') or {}
+            gems=getattr(self,'research_gems',None)
+            if type(balances.get('elixir')) is not int or type(gems) is not int:
+                raise ValueError('Sneaky Archer payment needs verified before-Elixir and gem balances')
+            return {'target_level':level,'balances_before':balances,'gems_before':gems}
+        if type(confirmation.get('target_level')) is not int:return {}
         # The confirmation hides HUD counters, so preserve their immediately
         # preceding menu proof separately from the modal's price/resource proof.
         return {'target_level':confirmation['target_level'],
@@ -233,6 +275,10 @@ class BuilderProgressionRunner(BuilderUpgradeRunner):
 
     def _verify_pending(self,state,kind,frame):
         p=state.get('pending',{});level=p.get('target_level');before=p.get('balances_before',{})
+        if (kind=='research' and compact(p.get('name',''))=='sneakyarcher'
+            and (type(level) is not int or not 2<=level<=30
+                 or type(before.get('elixir')) is not int or type(p.get('gems_before')) is not int)):
+            return False
         if (kind!='research' or p.get('kind')!=kind or type(level) is not int
             or type(before.get('elixir')) is not int or type(p.get('gems_before')) is not int):
             return super()._verify_pending(state,kind,frame)
@@ -305,8 +351,9 @@ class BuilderProgressionRunner(BuilderUpgradeRunner):
     def eligibility(self,kind,candidate,balances,availability):
         if kind=='research':
             name=compact(candidate.name)
-            if name not in ('ragedbarbarian','sneakyarcher','nightwitch'):
-                return 'Builder farming troop identity is not supported'
+            row=self._research_rows.get(self._research_candidate_key(candidate))
+            if row is None or not supports_progression_research(row):
+                return 'Research unit or target level is not verified for Builder progression'
             if name in {compact(v) for v in self.config.upgrade_excluded_names.split(',')}:
                 return 'Excluded in settings'
             if candidate.currency!='elixir':return 'Research requires Builder Elixir'
@@ -354,7 +401,7 @@ class BuilderProgressionRunner(BuilderUpgradeRunner):
         try:
             current=self.capture.screenshot()
             if self.reader.home(current):
-                bridge=SimpleNamespace(frame=self.map_frame,tap=self.map_tap,wait=self.wait)
+                bridge=SimpleNamespace(frame=self.map_frame,tap=self.map_tap,wait=self.wait,stop=self.stopped)
                 self.capacities=self.reader.storage_capacities(bridge)
             frame=self.open_menu(kind)
             if frame is None:return {'status':'stopped'}

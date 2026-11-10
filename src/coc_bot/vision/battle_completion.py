@@ -43,7 +43,7 @@ class BattleCompletionDetector:
         # Match the gold lettering, not the changing village and army portraits
         # behind it. Native raster variants use the same match threshold.
         gold = _gold_letters(small)
-        for name in ("results_troops_expended", "results_troops_expended_current",
+        for name in ("results_troops_expended", "results_troops_expended_current", "results_troops_expended_1080",
                      "results_troops_expended_defeat"):
             spent = self._match(gold, name, (340, 320, 620, 400), gold=True)
             if spent is not None:

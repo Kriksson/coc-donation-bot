@@ -16,8 +16,10 @@ from coc_bot.adb.multitouch import Multitouch
 from coc_bot.attack.camera import compare_camera
 from coc_bot.attack.mapping import boundary_mask
 from coc_bot.stop import interrupted_sleep
+from coc_bot.runtime.battle_history import tracked_battle,note_battle,note_deployment
 from coc_bot.upgrades.runner import write_json
 from coc_bot.accounts.store import read
+from coc_bot.builder_base.frames import BuilderFrameCapture
 from coc_bot.builder_base.vision import BuilderReader
 from coc_bot.builder_base.upgrades import BuilderUpgradeRunner
 
@@ -46,32 +48,82 @@ def pending(config):
 
 
 def deployment_points(frame):
-    """Use the left boundary where visible; otherwise test clear arena tiles.
+    """Prefer clear terrain observed just outside the visible Builder boundary.
 
     These are bounded placement attempts, not a claim of legal-zone detection.
     A card's deployed state must change before moving on. No pan coordinates
     are reused across stages, and no tap is allowed outside the battlefield.
     """
     h, w = frame.shape[:2]
-    mask = boundary_mask(frame)
     points = []
-    lines = cv2.HoughLinesP(mask,1,np.pi/360,threshold=35,
-                            minLineLength=round(w*.045),maxLineGap=4)
+    # The shared mask deliberately hides the fixed left HUD and so removes
+    # this Builder arena's visible left perimeter. Rebuild the same strict red
+    # color test locally, only in its observed lower-left diagonal corridor.
+    hsv = cv2.cvtColor(frame,cv2.COLOR_BGR2HSV)
+    b,g,r = cv2.split(frame.astype(np.float32))
+    red = (((hsv[:,:,0] <= 18) | (hsv[:,:,0] >= 174))
+           & (hsv[:,:,1] >= 110) & (hsv[:,:,2] >= 65) & (hsv[:,:,2] <= 230)
+           & (r > g*1.7) & (r > b*1.7))
+    visible = np.zeros((h,w),np.uint8)
+    visible[round(h*.18):round(h*.66),:round(w*.32)] = 255
+    mask = cv2.bitwise_and(red.astype(np.uint8)*255,visible)
+    lines = cv2.HoughLinesP(mask,1,np.pi/360,threshold=max(20,round(w*.013)),
+                            minLineLength=round(w*.12),maxLineGap=round(w*.012))
+    candidates = []
     if lines is not None:
-        for x1,y1,x2,y2 in sorted(lines.reshape(-1,4),key=lambda v:-np.hypot(v[2]-v[0],v[3]-v[1])):
+        support_mask = cv2.dilate(mask,np.ones((3,3),np.uint8))
+        for x1,y1,x2,y2 in lines.reshape(-1,4):
+            if x2 < x1:
+                x1,x2,y1,y2 = x2,x1,y2,y1
             dx,dy = float(x2-x1),float(y2-y1)
-            x,y = (x1+x2)/2,(y1+y2)/2
-            if not dx or not .4 < abs(dy/dx) < 1.05 or not w*.25 < x < w*.48:
+            length = float(np.hypot(dx,dy))
+            # Require a long, supported, descending perimeter from near the
+            # left viewport edge. Interior walls and red scenery do not qualify.
+            if (length < w*.12 or dx <= 0 or not .55 < -dy/dx < .95
+                    or x1 > w*.08 or y1 < h*.38 or y1 > h*.64
+                    or x2 < w*.14 or x2 > w*.34 or y2 < h*.16 or y2 > h*.42):
                 continue
-            normal = np.array([-dy,dx])/np.hypot(dx,dy)
-            if normal[0] > 0:
-                normal = -normal
-            # Try several positions along an observed edge. One midpoint can
-            # coincide with an obstacle even when the rest of that edge is clear.
-            for fraction in (.5,.25,.75):
-                for offset in (.025,.04):
-                    location=np.array([x1+dx*fraction,y1+dy*fraction])+normal*w*offset
-                    points.append(tuple(np.rint(location).astype(int)))
+            n = max(2,round(length))
+            xs = np.rint(np.linspace(x1,x2,n)).astype(int)
+            ys = np.rint(np.linspace(y1,y2,n)).astype(int)
+            support = float((support_mask[ys,xs] > 0).mean())
+            if support >= .55:
+                candidates.append((length,np.array([x1,y1],float),np.array([dx,dy],float)))
+    if candidates:
+        length,start,delta = max(candidates,key=lambda item:item[0])
+        direction = delta/length
+        # For this left edge, the outside normal points up and left. Sample
+        # only along the measured segment, with small offsets into clear turf.
+        outward = np.array([direction[1],-direction[0]])
+        for fraction in (.28,.42,.56,.70):
+            for offset in (.018,.038):
+                location = start + delta*fraction + outward*w*offset
+                points.append(tuple(np.rint(location).astype(int)))
+    observed_points = set(points)
+    legacy_points = set()
+    # Keep the original strict visible-edge path for other inspected Builder
+    # layouts (including winter and centered arenas). It is a fallback when
+    # the specific measured left perimeter above is absent.
+    if not candidates:
+        legacy_mask = boundary_mask(frame)
+        legacy_lines = cv2.HoughLinesP(legacy_mask,1,np.pi/360,threshold=35,
+                                       minLineLength=round(w*.045),maxLineGap=4)
+        if legacy_lines is not None:
+            for x1,y1,x2,y2 in sorted(legacy_lines.reshape(-1,4),
+                                      key=lambda v:-np.hypot(v[2]-v[0],v[3]-v[1])):
+                dx,dy = float(x2-x1),float(y2-y1)
+                x = (x1+x2)/2
+                if not dx or not .4 < abs(dy/dx) < 1.05 or not w*.25 < x < w*.48:
+                    continue
+                normal = np.array([-dy,dx])/np.hypot(dx,dy)
+                if normal[0] > 0:
+                    normal = -normal
+                for fraction in (.5,.25,.75):
+                    for offset in (.025,.04):
+                        location=np.array([x1+dx*fraction,y1+dy*fraction])+normal*w*offset
+                        point=tuple(np.rint(location).astype(int))
+                        points.append(point)
+                        legacy_points.add(point)
     # A line midpoint can land on a rock/building. Count accepted terrain,
     # rather than raw Hough candidates, before excluding bounded fallbacks.
     points += [(round(w*x), round(h*y)) for x,y in ((.32,.46),(.33,.51),(.35,.56))]
@@ -81,7 +133,8 @@ def deployment_points(frame):
     hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     for x,y in points:
-        if not w*.20 < x < w*.60 or not h*.25 < y < h*.64:
+        x_min = w*.20 if (x,y) in legacy_points else w*.015
+        if not x_min < x < w*.60 or not h*.25 < y < h*.64:
             continue
         patch = hsv[y-8:y+9,x-8:x+9]
         # Inspected default and winter Builder tile palettes. This is only a
@@ -96,7 +149,7 @@ def deployment_points(frame):
 
 class BuilderBaseRunner:
     def __init__(self, config, capture, input_ctrl, navigator, client, stop=None):
-        self.config, self.capture, self.input = config, capture, input_ctrl
+        self.config, self.capture, self.input = config, BuilderFrameCapture(capture,navigator), input_ctrl
         self.nav, self.client, self.stop = navigator, client, stop
         self.reader = BuilderReader(stop)
         self.record = state(config)
@@ -130,6 +183,9 @@ class BuilderBaseRunner:
             self.folder.mkdir(parents=True, exist_ok=True)
             self.sequence += 1
             cv2.imwrite(str(self.folder/f'{self.sequence:03}-{name}.png'), frame)
+            raw = self.capture.raw_for(frame)
+            if raw is not None and self.capture.was_normalized(frame):
+                cv2.imwrite(str(self.folder/f'{self.sequence:03}-{name}-raw.png'), raw)
         except OSError as exc:
             logger.warning('Builder Base evidence could not be saved: {}', exc)
 
@@ -169,10 +225,10 @@ class BuilderBaseRunner:
                 if flow.select_setup_boat(frame):
                     flow.drive()
                     return self.frame()
-            point = self.reader.find(frame, 'boat_return' if returning else 'boat', (.14,.12,.90,.80), threshold=.86)
+            point = self.reader.boat_target(frame, returning=returning, box=(.14,.12,.90,.80), threshold=.86)
             if point:
                 second = self.frame()
-                again = self.reader.find(second, 'boat_return' if returning else 'boat', (.14,.12,.90,.80), threshold=.86)
+                again = self.reader.boat_target(second, returning=returning, box=(.14,.12,.90,.80), threshold=.86)
                 # The boat's bubble bobs by several pixels while the camera is
                 # stationary. Reacquire its center; tolerate only movement well
                 # inside that verified bubble, never a reused map coordinate.
@@ -204,6 +260,15 @@ class BuilderBaseRunner:
         self.evidence(frame,'boat-not-found')
         raise ValueError('Boat not found after bounded camera search')
 
+    def acknowledge_bonus(self, frame):
+        from coc_bot.progression.home import acknowledge_star_bonus
+        return acknowledge_star_bonus(self.nav,frame,self.capture,self.input,
+                                      lambda:bool(self.stop and self.stop()))
+
+    def recover_overlay(self, frame):
+        from coc_bot.progression.home import recover_known_overlay
+        return recover_known_overlay(self.nav,frame)
+
     def settle_village(self, verify):
         from coc_bot.progression.home import recover_home_overlay
         from coc_bot.builder_base.onboarding import BuilderOnboarding
@@ -211,13 +276,9 @@ class BuilderBaseRunner:
             frame = self.frame()
             from coc_bot.builder_base.tutorials import recover
             if recover(self,frame):continue
-            button = self.reader.reward_button(frame)
-            if button:
-                second = self.frame()
-                button = self.reader.reward_button(second)
-                if button:
-                    logger.info('Builder Base: acknowledging verified Star Bonus')
-                    self.tap(button)
+            if self.reader.reward_button(frame):
+                if not self.acknowledge_bonus(frame):
+                    raise ValueError('Star Bonus acknowledgement could not be verified or retry limit reached')
             elif BuilderOnboarding(self).dialog(frame) and BuilderOnboarding(self).advance_dialog():
                 pass
             elif recover_home_overlay(self.nav,frame):
@@ -267,7 +328,7 @@ class BuilderBaseRunner:
             from coc_bot.builder_base.tutorials import recover
             if recover(self,frame):frame=self.frame()
         if self.reader.reward_button(frame):
-            frame = self.settle_village(self.reader.home)
+            frame = self.settle_village(lambda f:self.reader.home(f) or self.home_village(f))
         if self.reader.home(frame):
             self.phase('returning_to_home_village')
             self.boat(returning=True)
@@ -295,7 +356,8 @@ class BuilderBaseRunner:
             raise ValueError('Builder Base Start Attack dialog not verified')
         from coc_bot.builder_base.starter import army as starter_army
         starter=starter_army(self.reader,frame)
-        supported=self.reader.supported_army(frame)
+        army_kind=self.reader.supported_army_kind(frame)
+        supported=army_kind is not None
         if not supported and starter is None:
             from coc_bot.builder_base.army import empty_attack,repair
             if empty_attack(self.reader,frame) and repair(self):
@@ -305,10 +367,12 @@ class BuilderBaseRunner:
                     # the village. Reopen it before interpreting any army card.
                     self.tap((round(frame.shape[1]*.065),round(frame.shape[0]*.89)))
                     self.wait();frame=self.frame();starter=starter_army(self.reader,frame)
-                supported=self.reader.supported_army(frame)
+                army_kind=self.reader.supported_army_kind(frame)
+                supported=army_kind is not None
         second=self.frame()
         if (not supported and starter is None or not self.reader.attack_menu(second)
-            or supported and not self.reader.supported_army(second)
+            or supported and self.reader.supported_army_kind(second)!=army_kind
+            or supported and not self.reader.battle_army_ready(army_kind)
             or starter is not None and starter_army(self.reader,second)!=starter):
             self.evidence(frame, 'unsupported-army')
             closing=self.frame()
@@ -320,8 +384,9 @@ class BuilderBaseRunner:
             self.phase('builder_home')
             logger.warning('Builder Base attack skipped: army is not a verified supported composition')
             return {'status':'unsupported_army'}
-        for key in ('starter_army','starter_sent','starter_confirmed'):self.record.pop(key,None)
+        for key in ('starter_army','starter_sent','starter_confirmed','army_kind'):self.record.pop(key,None)
         if starter is not None:self.record['starter_army']=starter
+        if supported:self.record['army_kind']=army_kind
         self.phase('matchmaking')
         self.tap(self.reader.find(second,'find_now',(.65,.60,.84,.72)))
         for _ in range(30):
@@ -329,13 +394,15 @@ class BuilderBaseRunner:
             frame = self.frame()
             if self.reader.battle(frame):
                 self.phase('battle')
-                return self.watch_battle(deploy=True)
+                return self.watch_battle(deploy=True,army=army_kind or 'night_witch')
         raise ValueError('Builder Base matchmaking timed out; checkpoint retained')
 
-    def watch_battle(self, *, deploy=False):
+    @tracked_battle('builder')
+    def watch_battle(self, *, deploy=False, army=None):
         if self.record.get('starter_army'):
             from coc_bot.builder_base.starter import watch
             return watch(self,deploy=deploy)
+        army=army or self.record.get('army_kind') or 'night_witch'
         deadline = time.monotonic()+480
         attempts = {}; abilities = {}; zoomed = False
         fighting = False
@@ -343,16 +410,30 @@ class BuilderBaseRunner:
         count = 0
         placement_frame = None
         placement_targets = []
+        air_positions = {}
+        spread_targets = []
+        spacing_notice = False
         while time.monotonic() < deadline:
             frame = self.frame()
             from coc_bot.builder_base.tutorials import recover
             if recover(self,frame):continue
+            if self.reader.reward_button(frame):
+                if not self.acknowledge_bonus(frame):
+                    raise ValueError('Star Bonus acknowledgement could not be verified or retry limit reached')
+                self.wait(.4)
+                continue
+            if self.recover_overlay(frame):
+                self.wait(.4)
+                continue
             point = self.reader.result_button(frame)
             if point:
                 self.evidence(frame,'battle-results')
                 second = self.frame()
                 point = self.reader.result_button(second)
                 if point:
+                    note_battle(entered_battle=True,result_confirmed=True)
+                    from coc_bot.runtime.battle_history import record_results
+                    record_results(frame,second,'builder',self.stop)
                     self.phase('leaving_results')
                     self.tap(point)
                     self.wait(2)
@@ -364,6 +445,7 @@ class BuilderBaseRunner:
             if not self.reader.battle(frame):
                 self.wait(1)
                 continue
+            note_battle(entered_battle=True)
             if not deploy:
                 self.wait(3)
                 continue
@@ -376,14 +458,33 @@ class BuilderBaseRunner:
                 zoomed = False
                 placement_frame = None
                 placement_targets = []
+                spread_targets = []
+                air_positions.clear()
+                spacing_notice = False
                 attempts.clear()
                 abilities.clear()
                 fighting = False
             elif not scouting:
                 fighting = True
-            cards = self.reader.cards(frame)
+            cards = self.reader.cards(frame,army=army)
+            note_battle(army=[{'unit':card['unit'],'count':1} for card in cards])
             ready = sorted([c for c in cards if not c['deployed'] and attempts.get((c['slot'],c['unit']),0)<6],
                            key=lambda c: (c['slot']==0, c['slot']))
+            if ready and army=='baby_dragon' and spread_targets and air_positions:
+                from coc_bot.builder_base.deployment import separated_air_target
+                feasible=[];held=False
+                for candidate in ready:
+                    if candidate['unit'] in ('baby_dragon','battle_copter'):
+                        occupied=[p for slot,positions in air_positions.items() if slot!=candidate['slot'] for p in positions]
+                        if separated_air_target(spread_targets,occupied,frame.shape[1]) is None:
+                            held=True
+                            continue
+                    feasible.append(candidate)
+                if held and not spacing_notice:
+                    logger.warning('Дракончики ожидают: на видимой границе нет достаточно удалённой точки высадки')
+                    spacing_notice=True
+                # Held air camps must not starve ground heroes or abilities.
+                ready=feasible
             if ready:
                 if not zoomed:
                     frame = self.zoom(frame)
@@ -395,7 +496,7 @@ class BuilderBaseRunner:
                     self.evidence(frame, 'stage-view')
                 card = ready[0]
                 second = self.frame()
-                same = next((c for c in self.reader.cards(second) if c['slot']==card['slot']
+                same = next((c for c in self.reader.cards(second,army=army) if c['slot']==card['slot']
                              and c['unit']==card['unit'] and not c['deployed']),None)
                 if same:
                     self.tap(same['point'])
@@ -414,7 +515,10 @@ class BuilderBaseRunner:
                     # camera and map; discard them on every stage transition.
                     if placement_frame is None:
                         placement_targets = deployment_points(after)
-                        placement_frame = after.copy() if placement_targets else None
+                        if army=='baby_dragon':
+                            from coc_bot.builder_base.deployment import air_deployment_points
+                            spread_targets=air_deployment_points(after,placement_targets)
+                        placement_frame = after.copy() if placement_targets or spread_targets else None
                     points = placement_targets
                     if placement_frame is not None:
                         alignment = compare_camera(placement_frame, after)
@@ -424,31 +528,58 @@ class BuilderBaseRunner:
                             continue
                     key = (card['slot'],card['unit'])
                     attempt = attempts.get(key,0)
-                    attempts[key] = attempt+1
-                    if points:
-                        self.tap(points[attempt % len(points)])
-                        self.wait(.4)
-                        check = self.frame()
-                        if attempt < 2:
-                            self.evidence(check, f'slot-{card["slot"]}-attempt-{attempt}')
-                        updated = next((c for c in self.reader.cards(check) if c['slot']==card['slot']
-                                        and c['unit']==card['unit']),None)
-                        if updated and updated['deployed']:
-                            count += 1
-                            logger.info('Builder Base: deployment confirmed for {} slot {}',card['unit'],card['slot'])
-                            self.evidence(check,'deployment-confirmed')
-                            abilities.pop(key,None)
+                    air_spread=army=='baby_dragon' and card['unit'] in ('baby_dragon','battle_copter')
+                    if air_spread:
+                        from coc_bot.builder_base.deployment import separated_air_target
+                        occupied=[p for slot,positions in air_positions.items() if slot!=card['slot'] for p in positions]
+                        target=separated_air_target(spread_targets,occupied,after.shape[1],attempt)
+                        if target is None:
+                            if not spacing_notice:
+                                logger.warning('Дракончики ожидают: на видимой границе нет достаточно удалённой точки высадки')
+                                spacing_notice=True
+                            self.wait(1)
+                            continue
                     else:
-                        logger.warning('Builder Base: no clear placement tile; waiting for a supported view')
+                        target=points[attempt % len(points)] if points else None
+                    if target is None:
+                        self.wait(1)
+                        continue
+                    if air_spread:
+                        # Reserve even an uncertain tap: a missed receipt must
+                        # never send another air camp into the same area.
+                        air_positions.setdefault(card['slot'],[]).append(target)
+                        logger.info('Раздельная высадка воздушного отряда: ячейка {}, точка {}',card['slot']+1,target)
+                    self.tap(target)
+                    attempts[key] = attempt+1
+                    self.wait(.4)
+                    check = self.frame()
+                    if attempt < 2:
+                        self.evidence(check, f'slot-{card["slot"]}-attempt-{attempt}')
+                    updated = next((c for c in self.reader.cards(check,army=army) if c['slot']==card['slot']
+                                        and c['unit']==card['unit']),None)
+                    if updated and updated['deployed']:
+                        count += 1
+                        note_deployment(card['unit'],points=[target],frame=check)
+                        logger.info('Builder Base: deployment confirmed for {} slot {}',card['unit'],card['slot'])
+                        self.evidence(check,'deployment-confirmed')
+                        abilities.pop(key,None)
+                    else:
+                        logger.warning('Builder Base: no clear deployment confirmation; waiting for a supported view')
             else:
                 for card in cards:
                     key = (card['slot'],card['unit'])
                     cooldown = 15 if card['unit'] != 'night_witch' else 480
+                    one_time = card['unit'] in ('night_witch','baby_dragon')
+                    if one_time and key in abilities:
+                        continue
+                    if card['unit']=='baby_dragon' and not card.get('ability_ready'):
+                        continue
                     if not card['deployed'] or time.monotonic()-abilities.get(key,-1000)<cooldown:
                         continue
                     fresh = self.frame()
-                    valid = next((c for c in self.reader.cards(fresh) if c['slot']==card['slot']
-                                  and c['unit']==card['unit'] and c['deployed']),None)
+                    valid = next((c for c in self.reader.cards(fresh,army=army) if c['slot']==card['slot']
+                                  and c['unit']==card['unit'] and c['deployed']
+                                  and (c['unit']!='baby_dragon' or c.get('ability_ready'))),None)
                     if valid:
                         self.tap(valid['point'])
                         abilities[key] = time.monotonic()
@@ -541,6 +672,12 @@ class BuilderBaseRunner:
             self.finish()
             return
         frame = self.frame()
+        # A delivered bonus may survive a failed post-battle collection.
+        for _ in range(3):
+            if not self.reader.reward_button(frame):break
+            if not self.acknowledge_bonus(frame):
+                raise ValueError('Star Bonus acknowledgement could not be verified or retry limit reached')
+            self.wait(.4);frame=self.frame()
         # A reconnect can leave the free welcome notice over either village.
         # Dismiss only known non-purchase overlays before inspecting recovery.
         from coc_bot.progression.home import recover_home_overlay
@@ -622,7 +759,12 @@ class BuilderBaseRunner:
                 result=runner.run(kind,execute=True)
                 from coc_bot.runtime.verification import log_result
                 log_result(self.config,'builder_base.'+kind,result,pending=runner.state().get('pending'))
-                logger.info('Builder Base {} upgrade: {}',kind,result.get('status'))
+                logger.info('Builder Base {} upgrade: {} — {}',kind,result.get('status'),
+                            result.get('message') or 'No additional details')
+                if kind=='research' and result.get('status')=='nothing_eligible':
+                    for item in result.get('recommendations',[]):
+                        logger.info('Builder research candidate {}: {}',item.get('name'),
+                                    item.get('skip') or 'eligible')
                 if result.get('status') in ('started','built','recovered'):
                     completed.append(result)
                     continue  # The previous transaction is already confirmed.
@@ -680,20 +822,26 @@ class BuilderBaseRunner:
         from coc_bot.builder_base.resources import ResourceReader
         path=self.config.data_dir/'resources/builder.json'
         saved=read(path,{})
+        account=getattr(self.config,'account_tag',None)
+        if saved.get('account',account)!=account:raise ValueError('Builder resource observations belong to another account')
         if time.time()<saved.get('retry_at',0):
             return report|{'retry_at':saved['retry_at'],'message':saved.get('message','Builder farming paused')}
         saved.pop('retry_at',None)
         reader=ResourceReader(self.reader)
-        first,second=reader.balances(self.frame()),reader.balances(self.frame())
+        capacities=self.reader.storage_capacities(self)
+        first_frame,second_frame=self.frame(),self.frame()
+        clean=not any(self.reader.storage_tooltip_visible(f,r) for f in (first_frame,second_frame) for r in ('gold','elixir'))
+        first,second=(reader.balances(first_frame),reader.balances(second_frame)) if clean else ({},{})
         observation={'resources':['gold','elixir'],
-                     'balances':{r:second.get(r) for r in ('gold','elixir') if first.get(r)==second.get(r)},
-                     'capacities':self.reader.storage_capacities(self)}
+                     'balances':{r:second[r] for r in ('gold','elixir') if type(second.get(r)) is int and first.get(r)==second[r]},
+                     'capacities':capacities}
         decision=decide(observation,saved,start=self.config.farm_resource_start_percent,
                         stop=self.config.farm_resource_target_percent)
-        saved.update(observation=observation,observed_at=time.time(),message=decision.message,status=decision.status)
+        saved.update(observation=observation,observed_at=time.time(),message=decision.message,status=decision.status,account=account)
         if decision.status=='unverified' or decision.attack and saved.get('no_progress',0)>=3:
-            saved.update(retry_at=time.time()+900,no_progress=0,
-                         message='Builder resource readings or repeated attacks need another check')
+            saved.update(retry_at=time.time()+(60 if decision.status=='unverified' else 900),no_progress=0,
+                         message=('Builder resources unreadable: '+decision.message if decision.status=='unverified'
+                                  else 'Builder attacks produced no verified resource gain'))
             write(path,saved)
             return report|{'retry_at':saved['retry_at'],'message':saved['message']}
         write(path,saved)
@@ -708,7 +856,10 @@ class BuilderBaseRunner:
                 after=reader.balances(self.frame())
                 if any(type(after.get(r)) is not int for r in decision.resources):
                     saved.update(retry_at=time.time()+300,message='Post-battle Builder resources are unreadable')
-                else:record_outcome(saved,observation['balances'],after,decision.resources)
+                else:
+                    record_outcome(saved,observation['balances'],after,decision.resources)
+                    if all(type(after.get(r)) is int for r in ('gold','elixir')):
+                        saved.update(observation=observation|{'balances':{r:after[r] for r in ('gold','elixir')}},observed_at=time.time())
             write(path,saved)
             return report|{'visit_repeat':not saved.get('retry_at'),
                            'retry_at':saved.get('retry_at'),'message':saved.get('message')}
@@ -739,6 +890,7 @@ class BuilderBaseRunner:
                 report['balances']=b['balances']
                 if progression:
                     from coc_bot.builder_base.progression import CONSTRUCTIBLE,hall_blockers
+                    from coc_bot.builder_base.research import supports_progression_research
                     if b['availability'] is None or not b['availability'][0]:continue
                     inventory=runner.scan(self.frame(),kind)
                     if not inventory['complete']:continue
@@ -756,8 +908,7 @@ class BuilderBaseRunner:
                         floor=getattr(self.config,'builder_base_'+resource+'_reserve')
                         balance=b['balances'].get(resource)
                         if resource in currencies or type(balance) is not int or balance>=row['cost']+floor:continue
-                        supported=(name in CONSTRUCTIBLE or name=='builderhall' and not hall_blockers(inventory)) if kind=='buildings' else (
-                            name=='nightwitch' or name=='sneakyarcher' and row.get('target_level')==2)
+                        supported=(name in CONSTRUCTIBLE or name=='builderhall' and not hall_blockers(inventory)) if kind=='buildings' else supports_progression_research(row)
                         if not supported:continue
                         located=runner.find_row(row,kind)
                         if located is None:continue
@@ -765,9 +916,12 @@ class BuilderBaseRunner:
                         # identical row must still exist before it can justify farming.
                         from coc_bot.progression.reader import row_key
                         fresh=runner.reader.rows(self.frame())
-                        if not any(row_key(v)==row_key(row) for v in fresh):continue
+                        if not any(row_key(v)==row_key(row) and
+                                   (kind!='research' or v.get('target_level')==row.get('target_level'))
+                                   for v in fresh):continue
                         excluded=name in {compact(n) for n in self.config.upgrade_excluded_names.split(',')}
-                        report['targets'].append({k:row[k] for k in ('name','currency','cost')}|
+                        target_fields=('name','currency','cost','target_level') if kind=='research' else ('name','currency','cost')
+                        report['targets'].append({k:row.get(k) for k in target_fields}|
                                                  {'kind':kind,'supported':not excluded})
                         currencies.add(resource)
                     continue

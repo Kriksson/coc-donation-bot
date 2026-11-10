@@ -77,6 +77,7 @@ class BotConfig:
     layouts_enabled: bool = False
     layouts_replace_inactive: bool = False
     farm_engine: str = 'sequence'
+    farm_trigger_mode: str = 'resources'
     upgrade_buildings_enabled: bool = False
     upgrade_lab_priority: bool = True
     upgrade_research_enabled: bool = False
@@ -344,6 +345,7 @@ def load_config(
         layouts_enabled=(merged.get('layouts') or {}).get('enabled') is True,
         layouts_replace_inactive=(merged.get('layouts') or {}).get('replace_inactive') is True,
         farm_engine=str(farm.get('engine','sequence')) if farm.get('engine','sequence') in ('sequence','planner','automatic') else 'sequence',
+        farm_trigger_mode=_farm_trigger_mode(farm.get('trigger_mode','resources')),
         upgrade_buildings_enabled=upgrades.get('buildings_enabled') is True,
         upgrade_lab_priority=upgrades.get('lab_priority',True) is True,
         upgrade_research_enabled=upgrades.get('research_enabled') is True,
@@ -364,7 +366,7 @@ def load_config(
         builder_base_interval_seconds=max(300,int(builder_base.get('interval_seconds',3600))),
         builder_base_builders_reserved=max(0,min(3,int(builder_base.get('builders_reserved',0)))),
         builder_base_gold_reserve=max(0,int(builder_base.get('gold_reserve',0))),
-        farm_interval_seconds=int(farm.get("interval_seconds", 3600)),
+        farm_interval_seconds=_farm_interval_seconds(farm.get("interval_seconds", 3600)),
         farm_interval_variance_seconds=max(0, int(farm.get("interval_variance_seconds", 300))),
         farm_resource_start_percent=int(farm.get('resource_start_percent', 75)),
         farm_resource_target_percent=int(farm.get('resource_target_percent', 95)),
@@ -408,6 +410,18 @@ def _normalize_gui_theme(gui: dict[str, Any]) -> str:
     # Prefer gui.theme; fall back to legacy gui.ui_style.
     raw = gui.get("theme", gui.get("ui_style", "modern"))
     return normalize_theme_id(raw)
+
+
+def _farm_trigger_mode(value: Any) -> str:
+    if value not in ('resources','interval'):
+        raise ValueError('farm.trigger_mode must be resources or interval')
+    return value
+
+
+def _farm_interval_seconds(value: Any) -> int:
+    if type(value) is not int or not 60 <= value <= 86400:
+        raise ValueError('farm.interval_seconds must be an integer from 60 to 86400')
+    return value
 
 
 def _normalize_gui_timing_preset(gui: dict[str, Any]) -> str:

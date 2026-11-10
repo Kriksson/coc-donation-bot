@@ -215,7 +215,7 @@ def defense_results_return_button(frame):
     return point
 
 
-def home_star_bonus_button(frame):
+def _legacy_home_star_bonus_button(frame):
     """Acknowledge delivered Home Village loot, never an offer or purchase."""
     if not isinstance(frame,np.ndarray) or not 1.6<frame.shape[1]/frame.shape[0]<1.95:return None
     image=cv2.resize(frame,(1853,1048));point=None
@@ -234,6 +234,64 @@ def home_star_bonus_button(frame):
     green=cv2.inRange(cv2.cvtColor(image[834:944,795:1083],cv2.COLOR_BGR2HSV),
                       (30,70,140),(90,255,255)).mean()/255
     return point if green>.5 else None
+
+
+
+def delivered_star_bonus_button(frame):
+    """Current delivered-loot notice, shared by both villages.
+
+    Three independent landmarks and an enabled Okay face are required; reward
+    amounts and the dimmed village behind the dialog do not authorize input.
+    """
+    if (not isinstance(frame,np.ndarray) or frame.ndim!=3 or frame.shape[2]!=3
+            or frame.dtype!=np.uint8 or not 1.6<frame.shape[1]/frame.shape[0]<1.95):return None
+    from coc_bot.vision.capped_frames import has_exact_cap_178,restore_cap_178
+    source=restore_cap_178(frame) if has_exact_cap_178(frame) else frame
+    image=cv2.resize(source,(1853,1048));point=None;button=None
+    for name,box in [('star_bonus_native_title',(650,145,1210,280)),
+                     ('star_bonus_native_message',(640,515,1210,635)),
+                     ('star_bonus_native_okay',(740,720,1125,920))]:
+        ref=_reference(name)
+        if ref is None:return None
+        x0,y0,x1,y1=box;region=image[y0:y1,x0:x1]
+        _,score,_,(x,y)=cv2.minMaxLoc(cv2.matchTemplate(region,ref,cv2.TM_CCOEFF_NORMED))
+        observed=region[y:y+ref.shape[0],x:x+ref.shape[1]]
+        if score<.96 or observed.mean()<ref.mean()*.85:return None
+        if name=='star_bonus_native_okay':
+            button=observed
+            point=(round((x0+x+ref.shape[1]/2)*frame.shape[1]/1853),
+                   round((y0+y+ref.shape[0]/2)*frame.shape[0]/1048))
+    green=cv2.inRange(cv2.cvtColor(button,cv2.COLOR_BGR2HSV),(30,70,140),(90,255,255)).mean()/255
+    return point if green>.5 else None
+
+
+@lru_cache(maxsize=1)
+def _legacy_bonus_reader():
+    from coc_bot.builder_base.vision import BuilderReader
+    return BuilderReader()
+
+
+def _legacy_builder_star_bonus_button(frame):
+    from coc_bot.vision.capped_frames import has_exact_cap_178,restore_cap_178
+    source=restore_cap_178(frame) if has_exact_cap_178(frame) else frame
+    reader=_legacy_bonus_reader()
+    if not (reader.find(source,'star_bonus',(.38,.16,.62,.25))
+            and reader.find(source,'bonus_received',(.37,.50,.63,.60))):return None
+    point=reader.find(source,'bonus_okay',(.42,.72,.58,.84))
+    if point is None:return None
+    x,y=point;scale=frame.shape[1]/1853
+    region=source[round(y-30*scale):round(y+30*scale),round(x-80*scale):round(x+80*scale)]
+    green=cv2.inRange(cv2.cvtColor(region,cv2.COLOR_BGR2HSV),(30,70,140),(90,255,255)).mean()/255
+    return point if green>.45 else None
+
+
+def home_star_bonus_button(frame):
+    """Shared delivered-bonus layouts; no village identity is inferred."""
+    if (not isinstance(frame,np.ndarray) or frame.ndim!=3 or frame.shape[2]!=3
+            or frame.dtype!=np.uint8 or frame.shape[0]<=0
+            or not 1.6<frame.shape[1]/frame.shape[0]<1.95):return None
+    return (_legacy_home_star_bonus_button(frame) or delivered_star_bonus_button(frame)
+            or _legacy_builder_star_bonus_button(frame))
 
 
 def event_story_button(frame):

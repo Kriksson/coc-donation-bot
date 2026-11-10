@@ -16,6 +16,15 @@ class ResourceVisionTests(unittest.TestCase):
     def frame(self,name):
         return cv2.imread(str(Path(__file__).parent/'fixtures/builder_base'/f'resources-{name}.png'))
 
+    def test_native_cart_requires_title_close_and_enabled_collect(self):
+        reader=ResourceReader(BuilderReader());frame=self.frame('cart-native')
+        self.assertTrue(reader.cart(frame));self.assertIsNotNone(reader.cart_collect(frame))
+        for bounds in [(805,80,1121,146),(1555,59,1670,162)]:
+            bad=frame.copy();a,b,c,d=bounds;bad[b:d,a:c]=0
+            self.assertFalse(reader.cart(bad));self.assertIsNone(reader.cart_collect(bad))
+        gray=frame.copy();gray[860:970,1290:1540]=cv2.cvtColor(cv2.cvtColor(gray[860:970,1290:1540],cv2.COLOR_BGR2GRAY),cv2.COLOR_GRAY2BGR)
+        self.assertIsNone(reader.cart_collect(gray))
+
     def test_collectors_in_both_areas_without_gem_mine_or_hud(self):
         reader=ResourceReader(BuilderReader())
         for name,expected in [('area1',{'gold':1,'elixir':1}),('area2',{'gold':2,'elixir':2}),
@@ -106,6 +115,24 @@ class ResourceSafetyTests(unittest.TestCase):
         c.collect_view()
         c.r.settle_village.assert_called_once_with(c.r.reader.home)
         c.r.tap.assert_not_called()
+
+    def test_bonus_appearing_immediately_after_a_collection_tap_is_settled(self):
+        c=self.collector();c.reader=MagicMock();c.reader.cart.return_value=False
+        home=object();bonus=object();state={'frame':home}
+        c.r.frame.side_effect=lambda:state['frame']
+        c.r.reader.reward_button.side_effect=lambda f:(900,800) if f is bonus else None
+        c.r.reader.home.side_effect=lambda f:f is home
+        c.reader.bubbles.return_value=[{'resource':'gold','point':(500,500)}]
+        c.reader.balances.return_value={'gold':100}
+        c.r.tap.side_effect=lambda _:state.update(frame=bonus)
+        def settle(_):state['frame']=home;return home
+        c.r.settle_village.side_effect=settle
+        c.settled_balances=MagicMock(return_value={'gold':140})
+        c.collect_view()
+        c.r.settle_village.assert_called_once_with(c.r.reader.home)
+        c.r.tap.assert_called_once_with((500,500))
+        self.assertEqual(c.report['confirmed'],1)
+        c.r.evidence.assert_not_called()
 
     def test_changed_gems_save_evidence_and_block_the_visit(self):
         c=self.collector();c.reader=MagicMock();c.reader.cart.return_value=False

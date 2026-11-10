@@ -113,7 +113,7 @@ class VisitTests(unittest.TestCase):
         self.runner.record = {'phase': 'collection_needs_review'}
         with self.assertRaisesRegex(ValueError, 'gem balance'):
             self.runner.recover()
-        self.runner.capture.screenshot.assert_not_called()
+        self.runner.capture.capture.screenshot.assert_not_called()
         self.runner.finish.assert_not_called()
 
     def test_research_reserve_busy_slot_and_unknown_units(self):

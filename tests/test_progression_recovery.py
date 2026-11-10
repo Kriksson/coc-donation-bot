@@ -244,6 +244,7 @@ class ArmyRecoveryTests(TestCase):
         for levels,expected in (([None,13,13],12),([13,14,13,14,13],None),([3,3,3,3,3],None)):
             prep=ArmyPreparation.__new__(ArmyPreparation);prep.s=Mock();prep.stop=lambda:False
             prep.s.config.account_town_hall=12
+            prep.capture=prep.s.capture
             prep.frame=Mock(return_value=frame)
             runner=Mock();runner.open_menu.return_value=frame;runner.clear_filters.return_value=frame
             runner.reader.rows.return_value=[row];runner.reader.menu_kind.return_value='buildings'

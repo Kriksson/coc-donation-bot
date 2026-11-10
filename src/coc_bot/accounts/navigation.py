@@ -86,6 +86,17 @@ def read_tag(frame, box, stop=None, *, cyan=False):
     parts=_tag_parts(image,cyan)
     if parts is None or stop and stop():return None
     mask,boxes=parts
+    # Complete native glyph evidence outranks OCR's same-length substitutions
+    # (for example a 0 read as C on the cyan Settings banner).
+    native=[]
+    for x,y,w,h in boxes:
+        if stop and stop():return None
+        label=_font_character(mask[y:y+h,x:x+w])
+        if label is None:break
+        native.append(label)
+    native=''.join(native)
+    if len(native)==len(boxes) and re.fullmatch(r'#[0289PYLQGRJCUV]{5,15}',native):
+        return tag(native)
     if cyan:
         hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
         gray = cv2.bitwise_not(cv2.inRange(hsv, (92,80,200), (108,220,255)))

@@ -69,6 +69,17 @@ class AutomaticPlanTests(TestCase):
 
 
 class AutomaticScanTests(TestCase):
+    def test_uncertain_spell_is_never_used_even_if_later_frames_agree(self):
+        session, catalog = self.session(), Mock()
+        rage = card('rage_spell', 'spell', 2, 250)
+        readings = [[card(), rage], [card(), replace(rage, quantity=1)]] + [
+            [card(), rage], [card(), rage]] * 4
+        with patch('coc_bot.attack.automatic.BattleFrameGate'), \
+                patch('coc_bot.attack.automatic.read_army', side_effect=readings):
+            cards = scan_army(session, catalog)
+        self.assertEqual([c.unit_id for c in cards], ['electro_dragon'])
+        session.input.tap.assert_not_called()
+
     def test_edge_fallback_leaves_spells_unused_even_if_the_count_changes(self):
         session, catalog = self.session(), Mock()
         rage = card('rage', 'spell', 5, 250)

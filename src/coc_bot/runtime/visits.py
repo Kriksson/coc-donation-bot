@@ -5,6 +5,7 @@ from coc_bot.accounts.store import read, write
 
 STEPS = ('farm', 'requests', 'upgrades', 'builder_base', 'layouts')
 VERSION = 1
+BURST_LIMIT = 2
 
 
 class Visit:
@@ -22,6 +23,10 @@ class Visit:
             if (type(state.get('step')) is not int or not 0<=state['step']<=len(STEPS)
                 or not isinstance(state.get('outcomes'),dict) or not isinstance(state.get('deferred'),dict)):
                 raise ValueError('Visit journal is invalid; review it before continuing')
+            bursts=state.get('bursts',{})
+            if (not isinstance(bursts,dict) or any(k not in ('farm','builder_base') or type(v) is not int
+                    or not 0<=v<=BURST_LIMIT for k,v in bursts.items())):
+                raise ValueError('Visit burst counters are invalid')
             for name in ('started_at','finished_at','next_check_at'):
                 value=state.get(name)
                 if value is not None and (type(value) not in (int,float) or not math.isfinite(value) or value<0):
@@ -53,11 +58,28 @@ class Visit:
         state = self.load()
         if name == 'upgrades' and state['step'] == 0:
             state['outcomes']['maintenance'] = {'at':self.clock(), 'status':'working' if repeat else 'checked', 'reason':reason}
-            if not repeat:state['maintenance_checked'] = True
+            if repeat:
+                state['maintenance_complete'] = False
+            else:
+                state['maintenance_checked'] = True
+                state['maintenance_complete'] = not bool(retry_at)
+                if retry_at:
+                    state['deferred']['upgrades'] = {'retry_at':retry_at, 'reason':reason}
+                    state['outcomes']['maintenance']['status'] = 'deferred'
+                else:
+                    state['deferred'].pop('upgrades', None)
             write(self.path,state)
             return
         if state['step'] >= len(STEPS) or STEPS[state['step']] != name:return
+        yielded=False
+        if repeat and name in ('farm','builder_base'):
+            bursts=state.setdefault('bursts',{})
+            bursts[name]=bursts.get(name,0)+1
+            if bursts[name]>=BURST_LIMIT:
+                repeat=False;yielded=True
+                reason='Серия из двух заходов завершена — очередь продолжена'
         state['outcomes'][name] = {'at': self.clock(), 'status': 'working' if repeat else 'checked', 'reason': reason}
+        if yielded:state['outcomes'][name]['status']='yielded'
         if repeat:
             write(self.path, state);return
         if retry_at:

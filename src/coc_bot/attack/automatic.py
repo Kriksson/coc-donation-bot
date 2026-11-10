@@ -101,6 +101,7 @@ def scan_army(session, catalog, *, include_spells=True):
     last_shape = None
     row = []
     skipped_heroes = set()
+    skipped_spells = set()
 
     def page():
         nonlocal last_shape, row
@@ -131,6 +132,14 @@ def scan_army(session, catalog, *, include_spells=True):
                 continue
             if not supported_identity(card, progression=progression):
                 logger.debug('Automatic army: ignoring unused card {} ({})',card.slot,card.unit_id or 'unrecognized')
+                continue
+            if card.kind == 'spell' and not card.stable:
+                # Optional support must never cause an unverified tap. Discard
+                # it for the entire scan, including overlapping pages.
+                skipped_spells.add(card.unit_id)
+                logger.info('Automatic attack: leaving uncertain spell {} unused', card.unit_id)
+                continue
+            if card.unit_id in skipped_spells:
                 continue
             if not card.stable:
                 raise ValueError('Automatic attack skipped: unreadable or changing army card: '+card.unit_id)
@@ -181,5 +190,6 @@ def scan_army(session, catalog, *, include_spells=True):
         previous = cards
         cards = swipe('end')
         if same_page(previous, cards):
-            return [card for unit_id, card in inventory.items() if unit_id not in skipped_heroes]
+            return [card for unit_id, card in inventory.items()
+                    if unit_id not in skipped_heroes and unit_id not in skipped_spells]
     raise ValueError('Automatic attack skipped: could not confirm the end of the army bar')

@@ -45,6 +45,26 @@ class WebTests(TestCase):
         self.assertEqual(result.status_code, 200)
         self.headers = {"X-CSRF-Token": result.json()["csrf"]}
 
+    def test_battle_history_and_images_use_current_account_and_reject_unknown_ids(self):
+        from types import SimpleNamespace
+        from coc_bot.runtime.battle_history import tracked_battle,note_battle,note_deployment
+        config=load_config()
+        @tracked_battle('home')
+        def run(owner):
+            note_battle(entered_battle=True)
+            note_deployment('dragon',points=[(40,40)],frame=np.zeros((100,200,3),np.uint8))
+            return SimpleNamespace(success=True,reason='ok')
+        run(SimpleNamespace(config=config))
+        response=self.client.get('/api/battles')
+        self.assertEqual(response.status_code,200)
+        report=response.json();self.assertEqual(report['unit_labels']['dragon'],'Дракон')
+        ident=report['entries'][0]['id']
+        image=self.client.get(f'/api/battles/{ident}/image')
+        self.assertEqual(image.status_code,200);self.assertEqual(image.headers['content-type'],'image/png')
+        self.assertEqual(self.client.get('/api/battles/not-an-id/image').status_code,404)
+        status=self.client.get('/api/status').json()
+        self.assertIn('reason',status['task_status']);self.assertIn('queue',status['task_status'])
+
     def test_corrupt_resource_history_does_not_break_status_or_stop(self):
         path=self.home/'data/resources/home.json';path.parent.mkdir(parents=True)
         path.write_text('{"observed_at":NaN}')
@@ -216,6 +236,19 @@ class WebTests(TestCase):
                 main(["--host", host, "--origin", "http://testserver"])
             self.assertEqual(raised.exception.code, 2)
 
+    def test_lan_phone_session_preserves_origin_and_csrf_checks(self):
+        origin='http://192.168.0.121:8765'
+        with TestClient(create_app(ControlService(),origins=[origin]),base_url=origin) as client:
+            session=client.get('/api/session')
+            self.assertEqual(session.status_code,200)
+            self.assertEqual(client.get('/api/network').json(),{'enabled':True,'urls':[origin]})
+            self.assertEqual(client.post('/api/stop').status_code,403)
+            headers={'Origin':origin,'X-CSRF-Token':session.json()['csrf']}
+            self.assertEqual(client.post('/api/stop',headers=headers).status_code,200)
+            self.assertEqual(client.get('/api/status',headers={'Origin':'http://evil.invalid'}).status_code,403)
+            with client.websocket_connect(origin.replace('http://','ws://')+'/api/events/ws',headers={'Origin':origin}) as socket:
+                self.assertIn('status',socket.receive_json())
+
     def test_settings_revision_and_validation(self):
         settings = self.client.get("/api/settings").json()
         keys = [field['key'] for field in settings['fields']]
@@ -226,17 +259,31 @@ class WebTests(TestCase):
                          'builder_base_attacks_enabled', 'builder_base_upgrades_enabled',
                          'builder_base_gold_reserve', 'builder_base_elixir_reserve',
                          'builder_base_builders_reserved'} <= set(keys))
-        self.assertNotIn('farm_interval_seconds',keys)
+        self.assertIn('farm_interval_seconds',keys)
+        self.assertIn('farm_trigger_mode',keys)
+        fields={field['key']:field for field in settings['fields']}
+        self.assertEqual(fields['farm_enabled']['label'],'Автоматические атаки в родной деревне')
+        self.assertIn('выбранным режимом запуска',fields['farm_enabled']['description'])
+        self.assertIn('не проверяет заполненность хранилищ',fields['farm_enabled']['description'])
+        self.assertEqual(fields['farm_trigger_mode']['choices'],['resources','interval'])
+        self.assertEqual(settings['values']['farm_trigger_mode'],'resources')
+        self.assertEqual(settings['values']['farm_interval_seconds'],3600)
         self.assertNotIn('builder_base_interval_seconds',keys)
         self.assertEqual(len(settings["themes"]), 7)
-        body = {"revision": settings["revision"], "values": {"farm_resource_start_percent": 80}}
+        body = {"revision": settings["revision"], "values": {"farm_resource_start_percent": 80,
+                                                                "farm_trigger_mode":"interval",
+                                                                "farm_interval_seconds":7200}}
         result = self.client.put("/api/settings", headers=self.headers, json=body)
         self.assertEqual(result.status_code, 200, result.text)
         self.assertEqual(load_config().farm_resource_start_percent, 80)
+        self.assertEqual(load_config().farm_trigger_mode,'interval')
+        self.assertEqual(load_config().farm_interval_seconds,7200)
         self.assertEqual(self.client.put("/api/settings", headers=self.headers, json=body).status_code, 409)
         for values in ({"donate_open_requests": "false"}, {"farm_pan_swipes": -1},
                        {"farm_pan_swipes": None}, {"farm_pan_swipes": True},
-                       {"scan_interval_ms": "200, 100"}, {"gui_theme": "missing"}, {"unknown": 1}):
+                       {"scan_interval_ms": "200, 100"}, {"gui_theme": "missing"},
+                       {"farm_trigger_mode":"guessed"},{"farm_interval_seconds":59},
+                       {"farm_interval_seconds":86401},{"unknown": 1}):
             body = {"revision": revision(), "values": values}
             self.assertEqual(self.client.put("/api/settings", headers=self.headers, json=body).status_code, 400)
 

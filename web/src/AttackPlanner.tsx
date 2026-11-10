@@ -1,6 +1,7 @@
 import React,{useEffect,useRef,useState} from 'react';
 import {AttackObservation} from './AttackObservation';
 import {mapTransform,inverse,transform} from './attackGeometry';
+import {MessageText} from './ui';
 
 type Point={x:number;y:number};
 type Step={action:string;unit_id:string;quantity:number;points:Point[];seconds:number};
@@ -43,7 +44,7 @@ export function AttackPlanner({api,base,result,locked}:{api:(p:string,m?:string,
     if(mark){setCorners(old=>{const points=[...old,[x,y]];if(points.length===4)setMark(false);return points;});setDirty(true);return;}
     if(target===null||!plan||corners.length!==4)return;
     const point=world(x,y);
-    if(!Number.isFinite(point.x)||!Number.isFinite(point.y)||point.x<0||point.x>1||point.y<0||point.y>1){setMessage('Choose a point on the village or its deployment border.');return;}
+    if(!Number.isFinite(point.x)||!Number.isFinite(point.y)||point.x<0||point.x>1||point.y<0||point.y>1){setMessage('Выберите точку внутри деревни или на границе высадки.');return;}
     const step=plan.steps[target],points=[...pending,point],needed=step.action==='deploy_line'?2:step.action==='cast_points'?step.quantity:1;
     if(points.length===needed){edit(target,{points});setPending([]);setTarget(null);}else setPending(points);
   }
@@ -53,28 +54,28 @@ export function AttackPlanner({api,base,result,locked}:{api:(p:string,m?:string,
   async function save(routine:boolean){
     if(!plan)return;
     const updated=await api('attack-planner/preview','POST',{observation_id:report.observation_id,revision:report.revision,plan,corners,save_routine:routine});
-    setReport(updated);setDirty(false);if(routine)setSaved(true);setMessage(routine?'Routine saved.':'Preview validated. Ready for a supervised attack.');
+    setReport(updated);setDirty(false);if(routine)setSaved(true);setMessage(routine?'План сохранён.':'Предпросмотр проверен. Можно запускать атаку под наблюдением.');
   }
   return <>
     <section className="attack-advanced"><div className="toolbar">
-      <button disabled={disabled} onClick={()=>action(()=>api('diagnostics/prepare_attack','POST'))}>Prepare opponent</button>
-      <button disabled={disabled} onClick={()=>action(()=>api('diagnostics/survey_attack','POST'))}>Map current opponent</button>
-      <button disabled={disabled} onClick={()=>action(()=>api('diagnostics/restore_attack_camera','POST'))}>Restore camera</button>
+      <button disabled={disabled} onClick={()=>action(()=>api('diagnostics/prepare_attack','POST'))}>Подготовить противника</button>
+      <button disabled={disabled} onClick={()=>action(()=>api('diagnostics/survey_attack','POST'))}>Составить карту противника</button>
+      <button disabled={disabled} onClick={()=>action(()=>api('diagnostics/restore_attack_camera','POST'))}>Вернуть камеру</button>
     </div></section>
     {report&&<>
-      <details open={!report.plan}><summary>Review army · {report.cards.filter((c:any)=>c.confirmed).length}/{report.cards.length} checked</summary>
+      <details open={!report.plan}><summary>Проверка армии · {report.cards.filter((c:any)=>c.confirmed).length}/{report.cards.length} проверено</summary>
         <AttackObservation report={report} base={base} save={async(id,revision,corrections)=>{const updated=await api('attack-observations/'+id,'PATCH',{revision,corrections});setReport(updated);setDirty(true);return updated;}}/>
       </details>
       <div className="toolbar">
-        <button disabled={disabled} onClick={()=>{setCorners([]);setMark(true);setTarget(null);setPending([]);setDirty(true);}}>Mark village corners</button>
-        <button disabled={disabled||corners.length!==4} onClick={()=>action(async()=>{setPlan(await api('attack-observations/'+report.observation_id+'/default-plan'));setDirty(true);})}>Create Electro Dragon routine</button>
-        <button disabled={disabled||!saved} onClick={()=>action(async()=>{setPlan(await api('attack-planner/routine'));setTarget(null);setPending([]);setDirty(true);})}>Load saved routine</button>
-        <span role="status">{mark?['Click the top corner','Click the right corner','Click the bottom corner','Click the left corner'][corners.length]:target!==null?'Click '+(plan?.steps[target]?.action==='deploy_line'?'two line endpoints':plan?.steps[target]?.action==='cast_points'?'each spell target':'a deployment point'):corners.length===4?'Village corners marked':'Four village corners needed'}</span>
+        <button disabled={disabled} onClick={()=>{setCorners([]);setMark(true);setTarget(null);setPending([]);setDirty(true);}}>Отметить углы деревни</button>
+        <button disabled={disabled||corners.length!==4} onClick={()=>action(async()=>{setPlan(await api('attack-observations/'+report.observation_id+'/default-plan'));setDirty(true);})}>Создать план с Электродраконом</button>
+        <button disabled={disabled||!saved} onClick={()=>action(async()=>{setPlan(await api('attack-planner/routine'));setTarget(null);setPending([]);setDirty(true);})}>Загрузить сохранённый план</button>
+        <span role="status">{mark?['Нажмите на верхний угол','Нажмите на правый угол','Нажмите на нижний угол','Нажмите на левый угол'][corners.length]:target!==null?'Нажмите '+(plan?.steps[target]?.action==='deploy_line'?'на оба конца линии':plan?.steps[target]?.action==='cast_points'?'на каждую цель заклинания':'на точку высадки'):corners.length===4?'Углы деревни отмечены':'Отметьте четыре угла деревни'}</span>
       </div>
-      <svg ref={svg} className={'attack-map '+((mark||target!==null)?'placing':'')} viewBox={mapBounds.join(' ')} onClick={click} aria-label="Attack map">
+      <svg ref={svg} className={'attack-map '+((mark||target!==null)?'placing':'')} viewBox={mapBounds.join(' ')} onClick={click} aria-label="Карта атаки">
         <image href={images+'mosaic.png'} width={w*2} height={h*2}/>
         {corners.length>1&&<polygon points={corners.map(([x,y])=>`${x+ox},${y+oy}`).join(' ')} fill="none" stroke="#63b3ff" strokeWidth="5"/>}
-        {corners.map(([x,y],i)=><g key={'corner'+i}><circle cx={x+ox} cy={y+oy} r={13} fill="#63b3ff"/><text x={x+ox+18} y={y+oy} fill="white" fontSize={28}>{['Top','Right','Bottom','Left'][i]}</text></g>)}
+        {corners.map(([x,y],i)=><g key={'corner'+i}><circle cx={x+ox} cy={y+oy} r={13} fill="#63b3ff"/><text x={x+ox+18} y={y+oy} fill="white" fontSize={28}>{['Верх','Право','Низ','Лево'][i]}</text></g>)}
         {plan?.steps.map((s,i)=><g key={i}>
           {s.action==='deploy_line'&&s.points.length===2&&<line x1={screen(s.points[0])[0]} y1={screen(s.points[0])[1]} x2={screen(s.points[1])[0]} y2={screen(s.points[1])[1]} stroke="#73e3a5" strokeWidth={7}/>}
           {s.points.map((point,j)=>{const [x,y]=screen(point);return <g key={j}><circle cx={x} cy={y} r={s.action==='cast_points'?35:19} fill={s.action==='cast_points'?'#a66bff88':'#73e3a5'}/><text x={x} y={y+8} textAnchor="middle" fill="white" stroke="#111" strokeWidth={1} fontSize={26}>{i+1}</text></g>;})}
@@ -83,21 +84,21 @@ export function AttackPlanner({api,base,result,locked}:{api:(p:string,m?:string,
       </svg>
       {plan&&<section className="attack-steps">{plan.steps.map((step,index)=><div className="attack-step" key={index}>
         <strong>{index+1}</strong>
-        <select aria-label="Action" value={step.action} onChange={e=>edit(index,{action:e.target.value,points:[],unit_id:e.target.value==='wait'?'':step.unit_id,quantity:e.target.value==='wait'?0:1,seconds:e.target.value==='wait'?1:0})}>
-          <option value="deploy_line">Deploy along line</option><option value="deploy_point">Deploy at point</option><option value="cast_points">Cast spells</option><option value="ability">Hero ability</option><option value="wait">Wait</option>
+        <select aria-label="Действие" value={step.action} onChange={e=>edit(index,{action:e.target.value,points:[],unit_id:e.target.value==='wait'?'':step.unit_id,quantity:e.target.value==='wait'?0:1,seconds:e.target.value==='wait'?1:0})}>
+          <option value="deploy_line">Высадить вдоль линии</option><option value="deploy_point">Высадить в точке</option><option value="cast_points">Применить заклинания</option><option value="ability">Способность героя</option><option value="wait">Ожидание</option>
         </select>
-        {step.action!=='wait'&&<select aria-label="Unit" value={step.unit_id} onChange={e=>edit(index,{unit_id:e.target.value,points:[]})}>{plan.army.map(u=><option value={u.unit_id} key={u.unit_id}>{u.unit_id.replaceAll('_',' ')}</option>)}</select>}
-        <label>{step.action==='wait'?'Seconds':'Quantity'}<input type="number" min={step.action==='wait'?0.1:1} max={step.action==='wait'?210:300} step={step.action==='wait'?0.1:1} value={step.action==='wait'?step.seconds:step.quantity} onChange={e=>edit(index,step.action==='wait'?{seconds:Number(e.target.value)}:{quantity:Number(e.target.value),...(step.action==='cast_points'?{points:[]}:{})})}/></label>
-        {!['wait','ability'].includes(step.action)&&<button disabled={disabled||corners.length!==4} onClick={()=>{setMark(false);setTarget(index);setPending([]);}}>Place on map</button>}
-        <div className="toolbar"><button aria-label="Move up" disabled={index===0} onClick={()=>move(index,-1)}>↑</button><button aria-label="Move down" disabled={index===plan.steps.length-1} onClick={()=>move(index,1)}>↓</button><button onClick={()=>{setTarget(null);setPending([]);setPlan({...plan,steps:plan.steps.filter((_,i)=>i!==index)});setDirty(true);}}>Remove</button></div>
-      </div>)}<button onClick={add}>Add step</button></section>}
+        {step.action!=='wait'&&<select aria-label="Отряд" value={step.unit_id} onChange={e=>edit(index,{unit_id:e.target.value,points:[]})}>{plan.army.map(u=><option value={u.unit_id} key={u.unit_id}>{u.unit_id.replaceAll('_',' ')}</option>)}</select>}
+        <label>{step.action==='wait'?'Секунды':'Количество'}<input type="number" min={step.action==='wait'?0.1:1} max={step.action==='wait'?210:300} step={step.action==='wait'?0.1:1} value={step.action==='wait'?step.seconds:step.quantity} onChange={e=>edit(index,step.action==='wait'?{seconds:Number(e.target.value)}:{quantity:Number(e.target.value),...(step.action==='cast_points'?{points:[]}:{})})}/></label>
+        {!['wait','ability'].includes(step.action)&&<button disabled={disabled||corners.length!==4} onClick={()=>{setMark(false);setTarget(index);setPending([]);}}>Указать на карте</button>}
+        <div className="toolbar"><button aria-label="Переместить вверх" disabled={index===0} onClick={()=>move(index,-1)}>↑</button><button aria-label="Переместить вниз" disabled={index===plan.steps.length-1} onClick={()=>move(index,1)}>↓</button><button onClick={()=>{setTarget(null);setPending([]);setPlan({...plan,steps:plan.steps.filter((_,i)=>i!==index)});setDirty(true);}}>Удалить</button></div>
+      </div>)}<button onClick={add}>Добавить шаг</button></section>}
       <div className="toolbar">
-        <button disabled={disabled||!plan||corners.length!==4} onClick={()=>action(()=>save(false))}>Validate preview</button>
-        <button disabled={disabled||!plan||corners.length!==4} onClick={()=>action(()=>save(true))}>Save routine</button>
-        <button disabled={disabled||dirty||!report.plan||report.executed} onClick={()=>action(()=>api('attack-planner/execute','POST',{observation_id:report.observation_id,revision:report.revision}))}>Run this attack</button>
+        <button disabled={disabled||!plan||corners.length!==4} onClick={()=>action(()=>save(false))}>Проверить план</button>
+        <button disabled={disabled||!plan||corners.length!==4} onClick={()=>action(()=>save(true))}>Сохранить план</button>
+        <button disabled={disabled||dirty||!report.plan||report.executed} onClick={()=>action(()=>api('attack-planner/execute','POST',{observation_id:report.observation_id,revision:report.revision}))}>Выполнить эту атаку</button>
       </div>
-      {report.execution&&<p role="status">Last custom run: {report.execution.reason} · {report.execution.verified_taps} verified deployments{report.returned_home?' · Home confirmed':''}</p>}
+      {report.execution&&<p role="status">Последний запуск плана: <MessageText value={report.execution.reason}/> · подтверждено высадок: {report.execution.verified_taps}{report.returned_home?' · возврат домой подтверждён':''}</p>}
     </>}
-    <p role="status">{message}</p>
+    <p role="status"><MessageText value={message}/></p>
   </>;
 }

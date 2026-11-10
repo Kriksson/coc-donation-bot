@@ -39,6 +39,7 @@ def _pair(lo_hi: tuple[int, int]) -> str:
 UPGRADE_INTEGER_LIMITS = {
     'farm_resource_start_percent': (1, 99),
     'farm_resource_target_percent': (2, 100),
+    'farm_interval_seconds': (60, 86400),
     'builder_base_interval_seconds': (300, 86400),
     'builder_base_builders_reserved': (0, 3),
     'builder_base_gold_reserve': (0, 20_000_000),
@@ -52,38 +53,38 @@ UPGRADE_INTEGER_LIMITS = {
 
 
 SETTINGS: list[SettingField] = [
-    SettingField('builder_base_collect_resources','Collect Builder Base resources','Collect verified mine/collector bubbles in both areas and defense rewards from the Elixir Cart. Works without attacks or upgrades.','bool',lambda c:c.builder_base_collect_resources,'Builder Base',('builder_base','collect_resources')),
-    SettingField('builder_base_progression_enabled','Builder village progression','Prioritize the Star Laboratory, build missing structures, then upgrade existing buildings. Builder Hall advancement requires a complete max-building check.','bool',lambda c:c.builder_base_progression_enabled,'Builder Base',('builder_base','progression_enabled')),
-    SettingField('builder_base_research_enabled','Builder Base research','Use Builder Elixir for supported farming troops. Night Witch and the first Sneaky Archer upgrade are verified; unfamiliar confirmation screens pause safely.','bool',lambda c:c.builder_base_research_enabled,'Builder Base',('builder_base','research_enabled')),
-    SettingField('builder_base_elixir_reserve','Builder Elixir to keep','Minimum Builder Elixir remaining after research.','int',lambda c:c.builder_base_elixir_reserve,'Builder Base',('builder_base','elixir_reserve')),
-    SettingField('builder_base_attacks_enabled','Refill Builder Base resources','Use the Farm resource percentages to refill Builder storages before upgrade checks. Supports starter Barbarian camps or six Night Witches with Battle Machine. Unknown armies or counters defer farming; upgrade checks still run.','bool',lambda c:c.builder_base_attacks_enabled,'Builder Base',('builder_base','attacks_enabled')),
-    SettingField('builder_base_upgrades_enabled','Builder Base building upgrades','Use Builder Gold or Builder Elixir while keeping the selected reserves and spare builders. Progression adds construction and a gated Builder Hall check. Gems and items are excluded.','bool',lambda c:c.builder_base_upgrades_enabled,'Builder Base',('builder_base','upgrades_enabled')),
-    SettingField('builder_base_builders_reserved','Builder Base builders to keep free','Only affects Builder Base builders.','int',lambda c:c.builder_base_builders_reserved,'Builder Base',('builder_base','builders_reserved')),
-    SettingField('builder_base_gold_reserve','Builder Gold to keep','Minimum Builder Gold remaining after an upgrade.','int',lambda c:c.builder_base_gold_reserve,'Builder Base',('builder_base','gold_reserve')),
-    SettingField('progression_enabled','Village progression','Prioritize the Laboratory, build missing structures, then improve the village and prepare farming armies from verified unlocks. Town Hall upgrades require a complete max-building check.','bool',lambda c:c.progression_enabled,'Upgrades',('progression','enabled')),
-    SettingField('progression_rearrange','Search for building space','Move the new-building preview to find a valid spot before paying. Ordinary-obstacle clearing is a separate option.','bool',lambda c:c.progression_rearrange,'Upgrades',('progression','rearrange')),
-    SettingField('layouts_enabled','Automatic defensive layouts','Off by default. When enabled for this account, clear build-zone obstacles and import a matching defensive layout. Activate only after completion and Home village verification.','bool',lambda c:c.layouts_enabled,'Upgrades',('layouts','enabled')),
-    SettingField('layouts_replace_inactive','Replace inactive layouts','Allow automatic layouts to replace a spare inactive slot. The current active village is preserved until its replacement is complete.','bool',lambda c:c.layouts_replace_inactive,'Upgrades',('layouts','replace_inactive')),
-    SettingField('progression_clear_obstacles','Clear ordinary obstacles','Allow verified gold/elixir removal of ordinary obstacles to create building space. Seasonal removal needs its separate option.','bool',lambda c:c.progression_clear_obstacles,'Upgrades',('progression','clear_obstacles')),
-    SettingField('progression_clear_seasonal_obstacles','Remove seasonal obstacles','Also allow permanent removal of seasonal obstacles for verified gold/elixir costs. Gems, shovels and storage actions are excluded.','bool',lambda c:c.progression_clear_seasonal_obstacles,'Upgrades',('progression','clear_seasonal_obstacles')),
-    SettingField('upgrade_buildings_enabled','Automatic building upgrades','Use spare builders. Village progression adds new construction and full-building checks; otherwise follows Suggested upgrades.','bool',lambda c:c.upgrade_buildings_enabled,'Upgrades',('upgrades','buildings_enabled')),
-    SettingField('upgrade_research_enabled','Automatic army research','Start the first eligible Suggested troop or spell research when the laboratory is free. Never spend gems or items.','bool',lambda c:c.upgrade_research_enabled,'Upgrades',('upgrades','research_enabled')),
-    SettingField('upgrade_pets_enabled','Automatic pet upgrades','Upgrade an eligible unassigned pet when the pet-upgrade slot is free. Uses dark elixir while keeping your reserve. Never spends gems or items.','bool',lambda c:c.upgrade_pets_enabled,'Upgrades',('upgrades','pets_enabled')),
-    SettingField('upgrade_pets_include_assigned','Allow upgrades of equipped pets','Also consider pets assigned to heroes after checking unassigned pets. A pet being upgraded may be unavailable for attacks. Off keeps equipped pets out of automatic upgrades.','bool',lambda c:c.upgrade_pets_include_assigned,'Upgrades',('upgrades','pets_include_assigned')),
-    SettingField('upgrade_interval_seconds','Upgrade check interval (seconds)','Check between donation rounds, never during a battle or donation. Minimum 60 seconds.','int',lambda c:c.upgrade_interval_seconds,'Upgrades',('upgrades','interval_seconds')),
-    SettingField('upgrade_builders_reserved','Builders to keep free','Do not start a building upgrade if it would leave fewer free builders than this number.','int',lambda c:c.upgrade_builders_reserved,'Upgrades',('upgrades','builders_reserved')),
-    SettingField('upgrade_gold_reserve','Gold to keep','Minimum gold remaining after an upgrade.','int',lambda c:c.upgrade_gold_reserve,'Upgrades',('upgrades','gold_reserve')),
-    SettingField('upgrade_elixir_reserve','Elixir to keep for donations','Minimum elixir remaining after building or army upgrades.','int',lambda c:c.upgrade_elixir_reserve,'Upgrades',('upgrades','elixir_reserve')),
-    SettingField('upgrade_dark_elixir_reserve','Dark elixir to keep for donations','Minimum dark elixir remaining after army research or pet upgrades.','int',lambda c:c.upgrade_dark_elixir_reserve,'Upgrades',('upgrades','dark_elixir_reserve')),
-    SettingField('upgrade_excluded_names','Never upgrade these names','Optional comma-separated names, for example Bowler, Blacksmith. Other recommendations remain eligible.','str',lambda c:c.upgrade_excluded_names,'Upgrades',('upgrades','excluded_names')),
-    SettingField("collection_enabled", "Collect useful screenshots", "Passively save unusual screens and failures for review. Does not change game actions. Takes effect after Stop/Start.", "bool", lambda c: c.collection_enabled, "Screenshot collection", ("collection", "enabled")),
-    SettingField("collection_daily_limit", "Daily screenshot limit", "Maximum screenshots saved per UTC day, including failure context. Collection pauses when the limit is reached.", "int", lambda c: c.collection_daily_limit, "Screenshot collection", ("collection", "daily_limit")),
-    SettingField("collection_storage_gb", "Screenshot storage limit (GB)", "Stop saving when collected images reach this size. Existing images are never automatically deleted. Review them from Library.", "float", lambda c: c.collection_storage_gb, "Screenshot collection", ("collection", "storage_gb")),
+    SettingField('builder_base_collect_resources','Собирать ресурсы на Строительной базе','Собирать проверенные значки ресурсов у рудников и сборщиков в обеих деревнях, а также награды за оборону из тележки с эликсиром. Работает без атак и улучшений.','bool',lambda c:c.builder_base_collect_resources,'Builder Base',('builder_base','collect_resources')),
+    SettingField('builder_base_progression_enabled','Развитие Строительной базы','Сначала улучшать Звёздную лабораторию, затем строить недостающие сооружения и улучшать существующие. Переход на следующий уровень Ратуши строителя требует полной проверки максимальных уровней построек.','bool',lambda c:c.builder_base_progression_enabled,'Builder Base',('builder_base','progression_enabled')),
+    SettingField('builder_base_research_enabled','Исследования на Строительной базе','Тратить эликсир строителя на поддерживаемые войска для фарма. Ведьма ночи проверена; развитие также поддерживает Скрытого лучника 2–30 уровня, если уровень распознан. При незнакомом окне подтверждения бот безопасно остановится.','bool',lambda c:c.builder_base_research_enabled,'Builder Base',('builder_base','research_enabled')),
+    SettingField('builder_base_elixir_reserve','Оставлять эликсир строителя','Минимальный остаток эликсира строителя после исследования.','int',lambda c:c.builder_base_elixir_reserve,'Builder Base',('builder_base','elixir_reserve')),
+    SettingField('builder_base_attacks_enabled','Пополнять ресурсы Строительной базы','Использовать проценты ресурсов из раздела «Атаки», чтобы пополнять хранилища Строительной базы перед проверкой улучшений. Поддерживаются начальные лагеря варваров или шесть Ведьм ночи с Боевой машиной. При неизвестном составе войск или счётчиках фарм откладывается, проверки улучшений продолжаются.','bool',lambda c:c.builder_base_attacks_enabled,'Builder Base',('builder_base','attacks_enabled')),
+    SettingField('builder_base_upgrades_enabled','Улучшать постройки Строительной базы','Тратить золото или эликсир строителя с учётом выбранного резерва и свободных строителей. Режим развития строит новые сооружения и выполняет отдельную проверку Ратуши строителя. Самоцветы и предметы не используются.','bool',lambda c:c.builder_base_upgrades_enabled,'Builder Base',('builder_base','upgrades_enabled')),
+    SettingField('builder_base_builders_reserved','Оставлять свободными строителей базы','Влияет только на строителей Строительной базы.','int',lambda c:c.builder_base_builders_reserved,'Builder Base',('builder_base','builders_reserved')),
+    SettingField('builder_base_gold_reserve','Оставлять золото строителя','Минимальный остаток золота строителя после улучшения.','int',lambda c:c.builder_base_gold_reserve,'Builder Base',('builder_base','gold_reserve')),
+    SettingField('progression_enabled','Развитие деревни','Сначала улучшать лабораторию, затем строить недостающие сооружения, развивать деревню и готовить армии для фарма на основе проверенных открытий. Улучшение Ратуши требует полной проверки максимальных уровней построек.','bool',lambda c:c.progression_enabled,'Upgrades',('progression','enabled')),
+    SettingField('progression_rearrange','Искать место для постройки','Перемещать предварительный просмотр новой постройки, чтобы найти подходящее место до оплаты. Удаление обычных препятствий настраивается отдельно.','bool',lambda c:c.progression_rearrange,'Upgrades',('progression','rearrange')),
+    SettingField('layouts_enabled','Автоматические оборонительные расстановки','По умолчанию выключено. Если включить для этого аккаунта, бот очистит препятствия в зоне строительства и импортирует подходящую оборонительную расстановку. Активация выполняется только после завершения импорта и проверки домашней деревни.','bool',lambda c:c.layouts_enabled,'Upgrades',('layouts','enabled')),
+    SettingField('layouts_replace_inactive','Заменять неактивные расстановки','Разрешить автоматической расстановке занимать свободную неактивную ячейку. Текущая активная деревня сохраняется, пока замена не будет завершена.','bool',lambda c:c.layouts_replace_inactive,'Upgrades',('layouts','replace_inactive')),
+    SettingField('progression_clear_obstacles','Убирать обычные препятствия','Разрешить удалять обычные препятствия за проверенное количество золота или эликсира, чтобы освободить место для построек. Для сезонных препятствий есть отдельная настройка.','bool',lambda c:c.progression_clear_obstacles,'Upgrades',('progression','clear_obstacles')),
+    SettingField('progression_clear_seasonal_obstacles','Убирать сезонные препятствия','Также разрешить навсегда убирать сезонные препятствия за проверенное количество золота или эликсира. Самоцветы, лопаты и действия с хранилищами не используются.','bool',lambda c:c.progression_clear_seasonal_obstacles,'Upgrades',('progression','clear_seasonal_obstacles')),
+    SettingField('upgrade_buildings_enabled','Автоматически улучшать постройки','Использовать свободных строителей. Развитие деревни добавляет строительство и полные проверки построек; иначе используются рекомендованные улучшения.','bool',lambda c:c.upgrade_buildings_enabled,'Upgrades',('upgrades','buildings_enabled')),
+    SettingField('upgrade_research_enabled','Автоматически исследовать войска','Начинать первое подходящее рекомендованное исследование войска или заклинания, когда лаборатория свободна. Самоцветы и предметы не используются.','bool',lambda c:c.upgrade_research_enabled,'Upgrades',('upgrades','research_enabled')),
+    SettingField('upgrade_pets_enabled','Автоматически улучшать питомцев','Улучшать подходящего незанятого питомца, когда ячейка улучшения свободна. Используется тёмный эликсир с учётом резерва. Самоцветы и предметы не используются.','bool',lambda c:c.upgrade_pets_enabled,'Upgrades',('upgrades','pets_enabled')),
+    SettingField('upgrade_pets_include_assigned','Разрешить улучшать экипированных питомцев','После проверки незанятых питомцев учитывать и тех, кто назначен героям. Улучшаемый питомец может быть недоступен для атак. Если выключено, экипированные питомцы не улучшаются автоматически.','bool',lambda c:c.upgrade_pets_include_assigned,'Upgrades',('upgrades','pets_include_assigned')),
+    SettingField('upgrade_interval_seconds','Интервал проверки улучшений (секунды)','Проверять между раундами пожертвований, но не во время боя или пожертвования. Минимум — 60 секунд.','int',lambda c:c.upgrade_interval_seconds,'Upgrades',('upgrades','interval_seconds')),
+    SettingField('upgrade_builders_reserved','Оставлять свободными строителей','Не начинать улучшение постройки, если после этого свободных строителей останется меньше указанного числа.','int',lambda c:c.upgrade_builders_reserved,'Upgrades',('upgrades','builders_reserved')),
+    SettingField('upgrade_gold_reserve','Оставлять золото','Минимальный остаток золота после улучшения.','int',lambda c:c.upgrade_gold_reserve,'Upgrades',('upgrades','gold_reserve')),
+    SettingField('upgrade_elixir_reserve','Оставлять эликсир для пожертвований','Минимальный остаток эликсира после улучшения построек или войск.','int',lambda c:c.upgrade_elixir_reserve,'Upgrades',('upgrades','elixir_reserve')),
+    SettingField('upgrade_dark_elixir_reserve','Оставлять тёмный эликсир для пожертвований','Минимальный остаток тёмного эликсира после исследования войск или улучшения питомцев.','int',lambda c:c.upgrade_dark_elixir_reserve,'Upgrades',('upgrades','dark_elixir_reserve')),
+    SettingField('upgrade_excluded_names','Не улучшать объекты с этими названиями','Необязательно. Перечислите названия через запятую, например: Боулер, Кузница. Остальные рекомендации останутся доступными.','str',lambda c:c.upgrade_excluded_names,'Upgrades',('upgrades','excluded_names')),
+    SettingField("collection_enabled", "Собирать полезные снимки экрана", "Сохранять в фоне необычные экраны и ошибки для последующего просмотра. Не влияет на действия в игре. Вступает в силу после остановки и повторного запуска.", "bool", lambda c: c.collection_enabled, "Screenshot collection", ("collection", "enabled")),
+    SettingField("collection_daily_limit", "Дневной лимит снимков", "Максимальное число снимков за день по UTC, включая контекст ошибок. При достижении лимита сбор приостанавливается.", "int", lambda c: c.collection_daily_limit, "Screenshot collection", ("collection", "daily_limit")),
+    SettingField("collection_storage_gb", "Лимит хранилища снимков (ГБ)", "Прекратить сохранение, когда объём снимков достигнет этого значения. Существующие изображения автоматически не удаляются. Просмотреть их можно в библиотеке.", "float", lambda c: c.collection_storage_gb, "Screenshot collection", ("collection", "storage_gb")),
     SettingField(
         "gui_timing_preset",
-        "Timing preset",
-        "Safe = slower and steadier; Balanced = defaults; Fast = snappier taps/scans. "
-        "Turn on Dev options (Interface) to edit raw millisecond values.",
+        "Профиль скорости",
+        "Безопасный — медленнее и стабильнее; Сбалансированный — стандартные значения; Быстрый — более частые нажатия и проверки. "
+        "Включите параметры разработчика (Внешний вид), чтобы задавать задержки вручную в миллисекундах.",
         "choice",
         lambda c: timing_preset_label(c.gui_timing_preset),
         "Timing",
@@ -92,9 +93,8 @@ SETTINGS: list[SettingField] = [
     ),
     SettingField(
         "scan_interval_ms",
-        "Screenshot / scan interval (ms)",
-        "How long to wait between each bot loop (min, max). Lower = faster reactions but more "
-        "ADB screenshots and a laggier game. Example: 800, 1500",
+        "Интервал снимков и проверок (мс)",
+        "Пауза между циклами бота (минимум, максимум). Меньшее значение ускоряет реакцию, но увеличивает число снимков через ADB и может замедлить игру. Например: 800, 1500",
         "int_pair",
         lambda c: _pair(c.scan_interval_ms),
         "Timing",
@@ -102,9 +102,8 @@ SETTINGS: list[SettingField] = [
     ),
     SettingField(
         "anti_idle_seconds",
-        "Inactivity prevention interval (seconds)",
-        "About how often the bot does a small chat-panel swipe so Clash of Clans does not "
-        "kick you for being idle. Typical: 60",
+        "Интервал защиты от бездействия (секунды)",
+        "Как часто бот слегка прокручивает панель чата, чтобы Clash of Clans не отключил вас за бездействие. Обычно: 60",
         "int",
         lambda c: c.anti_idle_seconds,
         "Timing",
@@ -112,9 +111,8 @@ SETTINGS: list[SettingField] = [
     ),
     SettingField(
         "action_delay_ms",
-        "Delay between taps (ms)",
-        "Random pause after each tap/swipe (min, max). Makes actions look less robotic. "
-        "Example: 120, 350",
+        "Задержка между нажатиями (мс)",
+        "Случайная пауза после каждого нажатия или жеста (минимум, максимум). Действия выглядят естественнее. Например: 120, 350",
         "int_pair",
         lambda c: _pair(c.action_delay_ms),
         "Timing",
@@ -122,9 +120,8 @@ SETTINGS: list[SettingField] = [
     ),
     SettingField(
         "tap_jitter_px",
-        "Tap jitter (pixels)",
-        "Random offset added to tap coordinates so taps are not pixel-perfect every time "
-        "(donations, navigation, etc.). Farm deploy sequence has its own jitter below.",
+        "Разброс нажатия (пиксели)",
+        "Случайное смещение координат нажатия, чтобы оно каждый раз не приходилось в один пиксель (пожертвования, навигация и т. п.). Для высадки войск при фарме ниже задаётся отдельное смещение.",
         "int",
         lambda c: c.tap_jitter_px,
         "Timing",
@@ -132,9 +129,8 @@ SETTINGS: list[SettingField] = [
     ),
     SettingField(
         "donate_open_requests",
-        "Donate to open / non-specific requests",
-        "If enabled, the bot fills requests with no specific troop icons (open requests) by "
-        "tapping colored slots. If disabled, only specific (icon) requests are donated.",
+        "Заполнять открытые запросы",
+        "Если включено, бот заполняет запросы без значков конкретных войск, нажимая на цветные ячейки. Если выключено, он отвечает только на запросы с указанными войсками.",
         "bool",
         lambda c: c.donate_open_requests,
         "Donation",
@@ -142,8 +138,8 @@ SETTINGS: list[SettingField] = [
     ),
     SettingField(
         "bar_max_scroll_attempts",
-        "Troop bar max scrolls",
-        "How many times to swipe the troop bar right to reach siege machines (~3 usually needed).",
+        "Максимум прокруток панели войск",
+        "Сколько раз прокручивать панель войск вправо, чтобы добраться до осадных машин (обычно нужно около 3 раз).",
         "int",
         lambda c: c.bar_max_scroll_attempts,
         "Donation",
@@ -151,8 +147,8 @@ SETTINGS: list[SettingField] = [
     ),
     SettingField(
         "spell_bar_max_scroll_attempts",
-        "Spell bar max scrolls",
-        "How many times to swipe the spell bar after tapping all visible colored spells.",
+        "Максимум прокруток панели заклинаний",
+        "Сколько раз прокручивать панель заклинаний после нажатия на все видимые цветные заклинания.",
         "int",
         lambda c: c.spell_bar_max_scroll_attempts,
         "Donation",
@@ -160,8 +156,8 @@ SETTINGS: list[SettingField] = [
     ),
     SettingField(
         "chat_max_scroll_attempts",
-        "Chat scroll attempts",
-        "Max chat scrolls while searching for Donate buttons before resetting search strategy.",
+        "Попытки прокрутки чата",
+        "Максимум прокруток чата при поиске кнопок пожертвования до сброса стратегии поиска.",
         "int",
         lambda c: c.chat_max_scroll_attempts,
         "Donation",
@@ -169,8 +165,8 @@ SETTINGS: list[SettingField] = [
     ),
     SettingField(
         "donation_panel_wait_seconds",
-        "Donation panel wait (seconds)",
-        "How long to wait for the donation popup after tapping Donate before giving up.",
+        "Ожидание панели пожертвования (секунды)",
+        "Как долго ждать всплывающую панель пожертвования после нажатия кнопки, прежде чем прекратить попытки.",
         "float",
         lambda c: c.donation_panel_wait_seconds,
         "Donation",
@@ -178,8 +174,8 @@ SETTINGS: list[SettingField] = [
     ),
     SettingField(
         "handled_request_ttl_seconds",
-        "Handled request memory (seconds)",
-        "Ignore a request button we already finished for this many seconds (avoids reopening).",
+        "Память обработанных запросов (секунды)",
+        "Не нажимать повторно на кнопку запроса, который уже обработан, в течение этого времени.",
         "int",
         lambda c: c.handled_request_ttl_seconds,
         "Donation",
@@ -187,9 +183,8 @@ SETTINGS: list[SettingField] = [
     ),
     SettingField(
         "parse_request_capacity",
-        "OCR request capacity bars",
-        "If enabled, uses EasyOCR to read 0/35-style bars (slow). Not required for simple "
-        "colored-slot donating.",
+        "Распознавать шкалы запросов через OCR",
+        "Если включено, EasyOCR считывает шкалы вида 0/35 (медленно). Для пожертвований через цветные ячейки не требуется.",
         "bool",
         lambda c: c.parse_request_capacity,
         "Donation",
@@ -197,8 +192,8 @@ SETTINGS: list[SettingField] = [
     ),
     SettingField(
         "clan_level",
-        "Clan level",
-        "Your clan level — used for max housing you can donate per action (from clan_perks.yaml).",
+        "Уровень клана",
+        "Используется для расчёта максимального объёма войск за одно пожертвование (из clan_perks.yaml).",
         "int",
         lambda c: c.clan_level,
         "Clan",
@@ -206,26 +201,30 @@ SETTINGS: list[SettingField] = [
     ),
     SettingField(
         "farm_enabled",
-        "Refill Home Village resources",
-        "Attack when storage is low and recheck after each battle until the refill target is reached. "
-        "Requires the normal Farm navigation calibration.",
+        "Автоматические атаки в родной деревне",
+        "Включает автоматический фарм в родной деревне с выбранным режимом запуска: режим ресурсов требует проверенных балансов и вместимости, а режим интервала ждёт заданное время между атаками и не проверяет заполненность хранилищ. Требуется обычная калибровка навигации для фарма.",
         "bool",
         lambda c: c.farm_enabled,
         "Farm",
         ("farm", "enabled"),
     ),
+    SettingField('farm_trigger_mode','Условие запуска автоматической атаки',
+        'Режим ресурсов требует проверенных балансов и вместимости. Режим интервала запускает одну атаку по истечении заданного времени и не проверяет заполненность хранилищ.',
+        'choice',lambda c:c.farm_trigger_mode,'Farm',('farm','trigger_mode'),choices=('resources','interval')),
+    SettingField('farm_interval_seconds','Интервал между атаками (секунды)',
+        'Минимум — 60 секунд, максимум — 86400 секунд. Используется, когда условие запуска задано по интервалу.',
+        'int',lambda c:c.farm_interval_seconds,'Farm',('farm','interval_seconds')),
     SettingField(
-        'farm_engine', 'Attack method',
-        'Automatic reads the army and uses a farming routine without saved taps. Village progression also prepares troops from verified unlocks. '
-        'Supports optional Rage, siege and recognized heroes; uncertain or unsupported armies are skipped. '
-        'Planner uses a saved, live-tested routine. Sequence keeps your existing taps.',
+        'farm_engine', 'Способ атаки',
+        'Автоматический режим распознаёт армию и использует сценарий фарма без сохранённых нажатий. Развитие деревни также готовит войска на основе проверенных открытий. '
+        'Поддерживаются необязательное заклинание Ярости, осадные машины и распознанные герои; при сомнениях или неподдерживаемом составе атака пропускается. Планировщик использует сохранённый сценарий, проверенный в игре. Последовательность сохраняет заданные вами нажатия.',
         'choice', lambda c: c.farm_engine, 'Farm', ('farm','engine'),
         choices=('sequence','planner','automatic'),
     ),
     SettingField(
         "farm_resource_start_percent",
-        "Start refill below (%)",
-        "Start a refill when any unlocked resource falls below this percentage. Applies to Home and Builder Base farming.",
+        "Начинать пополнение ниже (%)",
+        "Начинать пополнение, когда любой открытый ресурс опустится ниже этого процента. Применяется к фарму в родной и Строительной деревне.",
         "int",
         lambda c: c.farm_resource_start_percent,
         "Farm",
@@ -233,8 +232,8 @@ SETTINGS: list[SettingField] = [
     ),
     SettingField(
         "farm_resource_target_percent",
-        "Refill to (%)",
-        "Continue the refill until every unlocked resource reaches this target. Must exceed the start percentage. Failed or unproductive attacks pause for review/retry.",
+        "Пополнять до (%)",
+        "Продолжать пополнение, пока каждый открытый ресурс не достигнет этого уровня. Он должен быть выше порога запуска. Неудачные атаки и атаки без добычи приостанавливаются для проверки или повтора.",
         "int",
         lambda c: c.farm_resource_target_percent,
         "Farm",
@@ -242,9 +241,8 @@ SETTINGS: list[SettingField] = [
     ),
     SettingField(
         "farm_deploy_side",
-        "Deploy side",
-        "Default battlefield edge when programming a new deploy sequence "
-        "(the saved sequence stores its own side).",
+        "Сторона высадки",
+        "Край поля боя по умолчанию для новой последовательности высадки (в сохранённой последовательности хранится собственная сторона).",
         "choice",
         lambda c: c.farm_deploy_side,
         "Farm",
@@ -253,9 +251,8 @@ SETTINGS: list[SettingField] = [
     ),
     SettingField(
         "farm_pan_swipes",
-        "Camera pan swipes",
-        "Default pan count when programming a new deploy sequence "
-        "(decimals ok, e.g. 1.25). The saved sequence stores its own value.",
+        "Сдвиги камеры",
+        "Число сдвигов по умолчанию при создании последовательности высадки (можно дробное, например 1,25). В сохранённой последовательности хранится собственное значение.",
         "float",
         lambda c: c.farm_pan_swipes,
         "Farm",
@@ -263,10 +260,8 @@ SETTINGS: list[SettingField] = [
     ),
     SettingField(
         "farm_deploy_jitter_px",
-        "Farm deploy jitter (pixels)",
-        "Random offset for farm deploy sequence taps only (±N on X and Y). "
-        "Does not affect donations or other taps. Also adjustable in the program-deploy "
-        "editor (circle radius = N). Keep ≤12 for small army-bar icons.",
+        "Разброс высадки при фарме (пиксели)",
+        "Случайное смещение только для нажатий последовательности высадки при фарме (±N по X и Y). Не влияет на пожертвования и другие нажатия. Также настраивается в редакторе последовательности (радиус круга = N). Для маленьких значков панели войск оставляйте значение ≤12.",
         "int",
         lambda c: c.farm_deploy_jitter_px,
         "Farm",
@@ -274,8 +269,8 @@ SETTINGS: list[SettingField] = [
     ),
     SettingField(
         "farm_match_timeout_seconds",
-        "Matchmaking timeout (seconds)",
-        "How long to wait in Find a Match / clouds before aborting the farm attempt.",
+        "Тайм-аут поиска противника (секунды)",
+        "Как долго ждать экран поиска противника или облака, прежде чем отменить попытку фарма.",
         "int",
         lambda c: c.farm_match_timeout_seconds,
         "Farm",
@@ -283,10 +278,8 @@ SETTINGS: list[SettingField] = [
     ),
     SettingField(
         "farm_battle_timeout_seconds",
-        "Battle results fallback (seconds)",
-        "Watch for the results screen after deploying. Return early only when its "
-        "labels are confirmed twice. If recognition fails, tap Return Home after "
-        "this time from first deploy (default 210 = 3 minutes 30 seconds).",
+        "Резервное ожидание результатов боя (секунды)",
+        "После высадки ждать экран результатов. Возвращаться раньше можно только после двукратного подтверждения его надписей. Если распознавание не удалось, нажать «Домой» по истечении этого времени с первой высадки (по умолчанию 210 секунд — 3 минуты 30 секунд).",
         "int",
         lambda c: c.farm_battle_timeout_seconds,
         "Farm",
@@ -294,9 +287,8 @@ SETTINGS: list[SettingField] = [
     ),
     SettingField(
         "farm_retry_cooldown_seconds",
-        "Farm failure cooldown (seconds)",
-        "Only used when a farm fails before deploy (e.g. could not open Attack). "
-        "After a fought battle, the Farm interval above applies instead.",
+        "Пауза после ошибки фарма (секунды)",
+        "Используется, только если фарм завершился ошибкой до высадки войск (например, не удалось открыть меню атаки). После боя применяется интервал фарма выше.",
         "int",
         lambda c: c.farm_retry_cooldown_seconds,
         "Farm",
@@ -304,9 +296,8 @@ SETTINGS: list[SettingField] = [
     ),
     SettingField(
         "adb_device",
-        "ADB device address",
-        "ADB target for the Android session, e.g. 127.0.0.1:5555 or host:5555. "
-        "Check with: adb devices",
+        "Адрес устройства ADB",
+        "Целевое устройство Android, например 127.0.0.1:5555 или host:5555. Проверить командой: adb devices",
         "str",
         lambda c: c.adb_device,
         "Device",
@@ -314,8 +305,8 @@ SETTINGS: list[SettingField] = [
     ),
     SettingField(
         "game_load_timeout_seconds",
-        "Game load timeout (seconds)",
-        "Max time to wait for Clash to finish loading after a relaunch.",
+        "Тайм-аут загрузки игры (секунды)",
+        "Максимальное время ожидания загрузки Clash после перезапуска.",
         "int",
         lambda c: c.game_load_timeout_seconds,
         "Device",
@@ -323,8 +314,8 @@ SETTINGS: list[SettingField] = [
     ),
     SettingField(
         "state_watchdog_seconds",
-        "Watchdog timeout (seconds)",
-        "If the bot stays in one state longer than this, it runs recovery (BACK + reopen chat).",
+        "Тайм-аут контроля зависания (секунды)",
+        "Если бот остаётся в одном состоянии дольше указанного времени, он выполняет восстановление (назад и повторное открытие чата).",
         "int",
         lambda c: c.state_watchdog_seconds,
         "Device",
@@ -332,8 +323,8 @@ SETTINGS: list[SettingField] = [
     ),
     SettingField(
         "template_threshold",
-        "Template match threshold",
-        "How strict OpenCV template matching is (0–1). Higher = fewer false matches, may miss buttons.",
+        "Порог совпадения шаблона",
+        "Строгость поиска совпадений шаблона в OpenCV (0–1). Чем выше значение, тем меньше ложных совпадений, но некоторые кнопки могут не распознаться.",
         "float",
         lambda c: c.template_threshold,
         "Vision",
@@ -341,8 +332,8 @@ SETTINGS: list[SettingField] = [
     ),
     SettingField(
         "donate_button_threshold",
-        "Donate button threshold",
-        "Match threshold specifically for the green Donate button in clan chat.",
+        "Порог совпадения кнопки пожертвования",
+        "Порог распознавания зелёной кнопки пожертвования в клановом чате.",
         "float",
         lambda c: c.donate_button_threshold,
         "Vision",
@@ -350,9 +341,8 @@ SETTINGS: list[SettingField] = [
     ),
     SettingField(
         "gui_show_debug_activity",
-        "Show DEBUG messages by default",
-        "Default for the activity log's Debug filter when opening the app. "
-        "The filter in Overview can change it temporarily.",
+        "Показывать DEBUG-сообщения по умолчанию",
+        "Начальное состояние фильтра DEBUG в журнале активности при открытии приложения. Фильтр в обзоре можно временно изменить.",
         "bool",
         lambda c: c.gui_show_debug_activity,
         "Interface",
@@ -360,9 +350,8 @@ SETTINGS: list[SettingField] = [
     ),
     SettingField(
         "gui_practice_mode",
-        "Practice mode (no donate taps)",
-        "When enabled, Start runs in practice mode: navigation still works, but donation "
-        "taps are skipped. Useful to verify calibration safely. Stop/Start after changing.",
+        "Режим практики (без пожертвований)",
+        "При запуске в режиме практики навигация работает, но нажатия для пожертвований пропускаются. Подходит для безопасной проверки калибровки. После изменения остановите и запустите бота снова.",
         "bool",
         lambda c: c.gui_practice_mode,
         "Interface",
@@ -370,9 +359,8 @@ SETTINGS: list[SettingField] = [
     ),
     SettingField(
         "gui_dev_options",
-        "Dev options",
-        "When enabled, Timing shows raw millisecond fields so you can edit values by hand. "
-        "When off, use Timing preset (Safe / Balanced / Fast) only.",
+        "Параметры разработчика",
+        "При включении в разделе времени отображаются значения в миллисекундах для ручной настройки. Если выключено, можно использовать только профиль скорости (Безопасный / Сбалансированный / Быстрый).",
         "bool",
         lambda c: c.gui_dev_options,
         "Interface",
@@ -380,9 +368,8 @@ SETTINGS: list[SettingField] = [
     ),
     SettingField(
         "gui_theme",
-        "Theme",
-        "Color palette for the desktop app. The web app uses the Harbor interface. "
-        "Previews immediately. Save changes keeps it without restarting the bot.",
+        "Тема оформления",
+        "Цветовая палитра настольного приложения. Веб-приложение использует интерфейс Harbor. Предпросмотр применяется сразу. Сохранённая тема остаётся после перезапуска бота.",
         "choice",
         lambda c: theme_label(c.gui_theme),
         "Interface",

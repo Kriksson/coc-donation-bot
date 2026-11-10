@@ -633,6 +633,7 @@ class AttackNavigator:
         deadline = time.monotonic() + remaining
         previous = None
         previous_at = 0.0
+        previous_result_frame = None
         last_diagnostic_reason = None
         star_target = None
         star_attempted = False
@@ -665,6 +666,10 @@ class AttackNavigator:
                 if stable:
                     if self._stopping():
                         return ScreenType.UNKNOWN
+                    from coc_bot.runtime.battle_history import note_battle
+                    note_battle(result_confirmed=True)
+                    from coc_bot.runtime.battle_history import record_results
+                    record_results(previous_result_frame,frame,'home',self.stop_check)
                     self.last_battle_end_reason = "results_confirmed"
                     self._save_battle_end_frame(frame, "confirmed")
                     logger.info("Battle results confirmed on two screenshots — Return Home at {}", target)
@@ -676,8 +681,10 @@ class AttackNavigator:
                         return ScreenType.UNKNOWN
                     return ScreenType.BATTLE_RESULTS
                 previous, previous_at = target, now
+                previous_result_frame = frame
             else:
                 previous = None
+                previous_result_frame = None
             if finish_after_star and not star_attempted:
                 from coc_bot.attack.star_finish import finish_star_battle, starred_end_button
 
@@ -749,14 +756,14 @@ class AttackNavigator:
                 logger.info("return_home_from_attack: stop requested — aborting")
                 return False
             frame = self.capture.screenshot()
-            from coc_bot.progression.home import recover_home_bonus
-            if self.donation_nav is not None and recover_home_bonus(self.donation_nav,frame):
+            from coc_bot.progression.home import recover_known_overlay
+            if self.donation_nav is not None and recover_known_overlay(self.donation_nav,frame):
                 if self._sleep(.6):return False
                 continue
             screen = self.classify(frame, mode=BotMode.ATTACK)
 
             from coc_bot.vision.battle_menu import reward_continue_button
-            reward = reward_continue_button(frame, stop_check=self.stop_check)
+            reward = reward_continue_button(frame, stop_check=self.stop_check) if self.donation_nav is None else None
             if self._stopping():
                 return False
             if reward is not None:
@@ -918,15 +925,15 @@ class AttackNavigator:
             if self._stopping():
                 return "stopped"
             frame = self.capture.screenshot()
-            from coc_bot.progression.home import recover_home_bonus
-            if recover_home_bonus(self.donation_nav,frame):
+            from coc_bot.progression.home import recover_known_overlay
+            if recover_known_overlay(self.donation_nav,frame):
                 if self._sleep(.6):return 'stopped'
                 continue
 
             # A sequence of resource reveals can interrupt home confirmation.
             # Check each fresh frame before any village/chat anchors.
             from coc_bot.vision.battle_menu import reward_continue_button
-            reward = reward_continue_button(frame, stop_check=self.stop_check)
+            reward = reward_continue_button(frame, stop_check=self.stop_check) if self.donation_nav is None else None
             if self._stopping():
                 return "stopped"
             if reward is not None:

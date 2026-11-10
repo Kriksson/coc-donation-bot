@@ -273,6 +273,14 @@ class AccountsTests(TestCase):
                 with patch('coc_bot.runtime.processes.run_process',return_value=SimpleNamespace(stdout='#UGLRLYL',returncode=0)):
                     self.assertEqual(read_tag(frame,(0,0,1,1),cyan=cyan),'#U8GL8RLYL')
 
+    def test_complete_native_tag_outranks_same_length_ocr_substitution(self):
+        from coc_bot.accounts.navigation import read_tag
+        from types import SimpleNamespace
+        frame=cv2.imread(str(Path(__file__).parent/'fixtures/accounts/tag-cyan.png'))
+        with patch('coc_bot.runtime.processes.run_process',
+                   return_value=SimpleNamespace(stdout='#U8GLCRLYL',returncode=0)):
+            self.assertEqual(read_tag(frame,(0,0,1,1),cyan=True),'#U8GL8RLYL')
+
     def test_additional_glyph_shapes_survive_deleted_digits_and_unknown_single_glyph_ocr(self):
         from coc_bot.accounts.navigation import read_tag
         from types import SimpleNamespace

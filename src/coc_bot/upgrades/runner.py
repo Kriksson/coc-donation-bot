@@ -10,6 +10,7 @@ from loguru import logger
 from coc_bot.stop import interrupted_sleep
 from coc_bot.upgrades.policy import reason
 from coc_bot.upgrades.vision import UpgradeReader, compact
+from coc_bot.vision.home_frames import home_capture
 
 
 def write_json(path, value):
@@ -26,7 +27,7 @@ def write_json(path, value):
 
 class UpgradeRunner:
     def __init__(self, config, capture, input_ctrl, navigator, stop=None):
-        self.config,self.capture,self.input,self.nav=config,capture,input_ctrl,navigator
+        self.config,self.capture,self.input,self.nav=config,home_capture(capture,navigator),input_ctrl,navigator
         self.stop=stop
         self.reader=UpgradeReader(stop)
         self.path=config.data_dir/'upgrades/state.json'
@@ -245,6 +246,12 @@ class UpgradeRunner:
                     try:
                         self.path.parent.mkdir(parents=True,exist_ok=True)
                         cv2.imwrite(str(self.path.with_name('last-blocked-confirmation.png')),frame)
+                        raw_for=getattr(self.capture,'raw_for',None)
+                        was_normalized=getattr(self.capture,'was_normalized',None)
+                        if callable(raw_for) and callable(was_normalized) and was_normalized(frame):
+                            raw=raw_for(frame)
+                            if isinstance(raw,np.ndarray):
+                                cv2.imwrite(str(self.path.with_name('last-blocked-confirmation-raw.png')),raw)
                     except OSError:
                         pass
                 return report|{'status':'blocked','message':'Upgrade confirmation name, price or resource could not be verified'}
@@ -267,14 +274,14 @@ class UpgradeRunner:
             if self.wait(1.0): return {'status':'needs_review','pending':pending}
             frame=self.capture.screenshot()
             if (self.reader.running_detail(frame,candidate) or
-                    kind=='pets' and self.reader.detail_close(frame) is not None):
+                    kind=='pets' and self.reader.detail_close(frame,candidate) is not None):
                 # Starting research leaves a details dialog open. Only close its
                 # verified X; Finish Now buttons must never receive another tap.
                 # Pet animation can keep the original Upgrade heading visible
                 # briefly after payment. Closing its verified X is safe; only
                 # the menu's active timer and busy slot can confirm success.
                 if self.stopped(): return {'status':'needs_review','pending':pending}
-                self.input.tap(*self.reader.detail_close(frame),jitter=0)
+                self.input.tap(*self.reader.detail_close(frame,candidate),jitter=0)
                 if self.wait(): return {'status':'needs_review','pending':pending}
                 frame=self.capture.screenshot()
             if self.reader.menu_kind(frame) != kind:
@@ -295,7 +302,7 @@ class UpgradeRunner:
                     # Close only a still-verified upgrade details dialog, never an
                     # unknown gem/shortfall dialog. Home recovery must not guess.
                     frame=self.capture.screenshot()
-                    close=self.reader.detail_close(frame)
+                    close=self.reader.detail_close(frame,candidate)
                     if close is not None:
                         self.input.tap(*close,jitter=0)
                         self.wait()

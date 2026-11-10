@@ -42,6 +42,21 @@ class ReviewRegressions(unittest.TestCase):
         write(self.config.data_dir/'resources/home.json',saved)
         self.assertEqual(resource_status(self.config)['observation'],saved['observation'])
 
+    def test_interval_status_keeps_balance_without_stale_capacity_warning(self):
+        self.config.farm_trigger_mode='interval'
+        self.config.farm_interval_seconds=1200
+        saved={'account':self.config.account_tag,'status':'unverified',
+               'message':'gold balance or capacity is unreadable',
+               'observation':{'resources':['gold'],'balances':{'gold':5136600},'capacities':{}}}
+        write(self.config.data_dir/'resources/home.json',saved)
+        result=resource_status(self.config)
+        self.assertEqual(result['observation'],saved['observation'])
+        self.assertEqual(result['trigger_mode'],'interval')
+        self.assertEqual(result['interval_seconds'],1200)
+        self.assertEqual(result['status'],'interval')
+        self.assertIsNone(result['message'])
+        self.assertEqual(json.loads((self.config.data_dir/'resources/home.json').read_text()),saved)
+
     def test_invalid_visit_cursor_or_deadline_is_never_silently_resumed(self):
         visit=Visit(self.config,lambda:1000)
         valid=visit.load()

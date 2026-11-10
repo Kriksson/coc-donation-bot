@@ -5,12 +5,12 @@ export type InterfacePalette={
   gold:string;elixir:string;dark_elixir:string;
   cobalt:string;brass:string;
 };
-// One semantic palette for Harbor; no account-dependent appearance state.
+// Shared light palette matches the local UniCode interface.
 export const harborPalette:InterfacePalette={
-  appearance:'dark',bg:'#07090d',sidebar:'#0b0e14',surface:'#101319',surface_hover:'#1a1f29',
-  text:'#f1f2f5',text_secondary:'#b9c2d1',border:'#737f94',accent:'#9cb9ff',accent_fg:'#07090d',
-  danger:'#bf3448',error:'#ffabb4',warning:'#d1b17c',success:'#9ec9ac',field_bg:'#0a0d13',
-  gold:'#c4a36c',elixir:'#91aaff',dark_elixir:'#adb5c7',cobalt:'#2448c7',brass:'#d4b27a',
+  appearance:'light',bg:'#ffffff',sidebar:'#faf9f8',surface:'#ffffff',surface_hover:'#f5f2ef',
+  text:'#302b28',text_secondary:'#746861',border:'#998e87',accent:'#ce3030',accent_fg:'#ffffff',
+  danger:'#b52c32',error:'#aa3038',warning:'#94651f',success:'#44774f',field_bg:'#ffffff',
+  gold:'#b48a38',elixir:'#a16aa3',dark_elixir:'#75708d',cobalt:'#d73737',brass:'#d73737',
 };
 
 export function paletteProperties(palette:InterfacePalette){

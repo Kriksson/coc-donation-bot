@@ -3,24 +3,40 @@ import {AttackObservation} from './AttackObservation';
 import {AttackPlanner} from './AttackPlanner';
 import {Accounts} from './Accounts';
 import {SettingsPanel} from './SettingsPanel';
+import {PhoneAccess} from './PhoneAccess';
+import {RunOverview,BattleHistory,type TaskStatus} from './RunOverview';
+import {presentMessage,setupInstruction,setupPartLabel,setupStepLabel} from './i18n';
 import {harborPalette,paletteProperties} from './interfacePalettes';
-import {EmptyState,Icon,pageIcons,pageLabels,ResourceLevels,ResourceStatus} from './ui';
+import {EmptyState,Icon,pageIcons,pageLabels,ResourceLevels,ResourceStatus,MessageText} from './ui';
 import {createRoot} from 'react-dom/client';
 import './style.css';
 import './harbor.css';
 
-type Status = {active:boolean; state:string; operation:string|null; activity:string|null; result:any; error:string|null;
+type Status = {active:boolean; state:string; operation:string|null; activity:string|null; activity_label?:string|null; result:any; error:string|null; error_label?:string|null;
   account?:{id:string;nickname:string;tag:string};account_pending?:boolean;
   manual_control:boolean;settings_update:string|null;
-  resource_farming?:ResourceStatus;
+  resource_farming?:ResourceStatus;builder_resources?:ResourceStatus;task_status?:TaskStatus;
   platform:{stage:string;message:string;ready:boolean;busy:boolean;error:string|null;game_update?:string|null}|null};
-type Entry = {id:number; level:string; text:string; at:string};
+type Entry = {id:number; level:string; text:string; at:string; summary?:string; technical?:boolean; category?:string; count?:number; replaces?:number; group?:number};
 type Field = {key:string;label:string;description:string;kind:string;choices:string[];section:string;advanced:boolean;restart_required?:boolean;expert?:boolean};
 type SettingsData = {revision:string;values:Record<string,any>;fields:Field[];themes:any[]};
 type Part = {key:string;label:string;kind:string;configured:boolean;optional:boolean;advanced?:boolean;instructions:string};
 type SetupData = {revision:string;steps:{id:string;label:string;parts:Part[]}[]};
 type Capture = {id:string;width:number;height:number;revision:string;at:string;taps?:number[][];jitter?:number};
+async function copyText(value:string){
+  if(!navigator.clipboard)throw new Error('Буфер обмена недоступен. Используйте экспорт журнала в разделе «Инструменты».');
+  await navigator.clipboard.writeText(value);
+}
 let csrf='';
+const levelLabels:Record<string,string>={DEBUG:'ОТЛАДКА',INFO:'ИНФО',WARNING:'ВНИМАНИЕ',ERROR:'ОШИБКА',CRITICAL:'КРИТИЧЕСКАЯ'};
+const stateLabels:Record<string,string>={running:'Работает',starting:'Запуск',stopping:'Остановка',failed:'Ошибка',stopped:'Остановлен',idle:'Ожидание'};
+const presentState=(value:string)=>stateLabels[value]||value.replaceAll('_',' ');
+const currencyLabels:Record<string,string>={gold:'золото',elixir:'эликсир',dark_elixir:'тёмный эликсир',builder_gold:'золото строителя',builder_elixir:'эликсир строителя'};
+const upgradeLabels:Record<string,string>={busy:'занято',unavailable:'недоступно',insufficient_resources:'недостаточно ресурсов',reserved:'зарезервировано',eligible:'можно улучшить',already_max:'максимальный уровень'};
+const upgradeStatus=(value:string)=>upgradeLabels[value]||value;
+const collectionLabels:Record<string,string>={storage_limit:'достигнут лимит хранилища',daily_limit:'достигнут дневной лимит',disabled:'сбор выключен',disk_full:'недостаточно места на диске'};
+const localizedCollectionReason=(value:string)=>collectionLabels[value]||value.replaceAll('_',' ');
+const repeatedLabel=(count:number)=>` · повторено ${count} ${count%10===1&&count%100!==11?'раз':count%10>=2&&count%10<=4&&!(count%100>=12&&count%100<=14)?'раза':'раз'}`;
 const FIRST_LAUNCH=location.pathname.startsWith('/first-launch');
 const BASE=FIRST_LAUNCH?'/first-launch':'';
 const BASIC_SETTINGS=new Set(['gui_timing_preset','donate_open_requests','farm_enabled','farm_engine',
@@ -129,7 +145,7 @@ function App(){
         const data=JSON.parse(e.data);setStatus(data.status);
         setLogs(old=>{
           const merged=new Map<number,Entry>((data.events.reset?[]:old).map((x:Entry)=>[x.id,x]));
-          data.events.entries.forEach((x:Entry)=>merged.set(x.id,x));
+          data.events.entries.forEach((x:Entry)=>{if(x.replaces)merged.delete(x.replaces);if(x.group)for(const [id,entry] of merged)if(entry.group===x.group)merged.delete(id);merged.set(x.id,x);});
           return [...merged.values()].slice(-500);
         });
       };
@@ -157,7 +173,7 @@ function App(){
     if(!pendingCapture.current||status?.active||status?.operation!=='capture')return;
     pendingCapture.current=false;
     if(status.result?.id){setCapture(status.result);setEditor(captureIntent);}
-    else setNotice(status.error||'Screenshot could not be captured');
+    else setNotice(status.error||'Не удалось сделать снимок экрана');
   },[status]);
   useLayoutEffect(()=>{
     const palette=harborPalette;
@@ -203,7 +219,7 @@ function App(){
       const updated=await api('settings','PUT',{revision:settings!.revision,values});
       setSettings(updated);
       if(version===draftVersion.current){setValues(updated.values);setDirty(false);}
-      setNotice(updated.restarted?'Settings saved — bot restarting':'Settings saved');
+      setNotice(updated.restarted?'Настройки сохранены — бот перезапускается':'Настройки сохранены');
     } catch(e){setNotice((e as Error).message);}
     finally{setSavingSettings(false);}
   }
@@ -219,45 +235,46 @@ function App(){
       const response=await fetch(BASE+'/api/runtime/import-game',{method:'POST',
         headers:{'Content-Type':'application/zip','X-CSRF-Token':csrf},body:file});
       if(!response.ok)throw new Error(await response.text());
-      setStatus(await response.json());setNotice('Game archive imported. Preparing Clash…');
+      setStatus(await response.json());setNotice('Архив игры импортирован. Подготовка Clash…');
     });
   }
-  const activityPanel=(<section key="activity" className="activity panel"><div className="panel-label activity-controls"><span>Activity <span className="live-indicator"><i className={'status-dot '+(online?'connected':'')}/></span></span><div className="activity-options">
-        <label className="toggle"><input type="checkbox" checked={debug} onChange={e=>setDebug(e.target.checked)}/>Debug</label>
-        <label className="toggle"><input type="checkbox" checked={scroll} onChange={e=>setScroll(e.target.checked)}/>Auto-scroll</label>
-        <button className="icon-button" aria-label="Copy activity" title="Copy activity" onClick={()=>navigator.clipboard.writeText(logs.map(x=>x.at+' '+x.level+' '+x.text).join('\n')).catch(()=>setNotice('Clipboard unavailable. Use Export in Tools.'))}><Icon name="copy" size={17}/></button></div></div>
-        <div className="log" role="log" aria-label="Bot activity" aria-live="off">{logs.filter(x=>debug||x.level!=='DEBUG').map(x=><div className={'log-entry '+x.level.toLowerCase()} key={x.id}><time>{new Date(x.at).toLocaleTimeString(undefined,{hour12:false})}</time><i className="log-dot"/><span>{x.text}</span></div>)}
-        {!logs.filter(x=>debug||x.level!=='DEBUG').length&&<EmptyState icon="overview">Activity will appear here</EmptyState>}<div ref={logEnd}/></div></section>);
-  const resourcePanel=(<div key="resources" className="overview-side"><ResourceLevels data={status?.resource_farming}/>
-      <label className="toggle overview-practice"><span>Practice mode</span><input type="checkbox" checked={practice} disabled={!!status?.active} onChange={e=>setPractice(e.target.checked)}/></label></div>);
-  if(checkingSession||(!signed&&!passwordRequired))return <main className="login" role="status">Connecting…</main>;
+  const visibleLogs=logs.filter(x=>(debug||x.level!=='DEBUG')&&(debug||!x.technical));
+  const activityPanel=(<section key="activity" className="activity panel"><div className="panel-label activity-controls"><span>Активность <span className="live-indicator"><i className={'status-dot '+(online?'connected':'')}/></span></span><div className="activity-options">
+        <label className="toggle"><input type="checkbox" checked={debug} onChange={e=>setDebug(e.target.checked)}/>Отладка</label>
+        <label className="toggle"><input type="checkbox" checked={scroll} onChange={e=>setScroll(e.target.checked)}/>Автопрокрутка</label>
+        <button className="icon-button" aria-label="Скопировать журнал активности" title="Скопировать журнал активности" onClick={()=>copyText(logs.map(x=>`${new Date(x.at).toLocaleString('ru-RU')} ${levelLabels[x.level]||x.level} ${x.summary||x.text}${debug&&x.text&&x.summary?'\n  Технические подробности: '+x.text:''}`).join('\n')).catch(()=>setNotice('Буфер обмена недоступен. Используйте экспорт в разделе «Инструменты».'))}><Icon name="copy" size={17}/></button></div></div>
+        <div className="log" role="log" aria-label="Активность бота" aria-live="off">{visibleLogs.map(x=><div className={'log-entry '+x.level.toLowerCase()} key={x.id}><time>{new Date(x.at).toLocaleTimeString('ru-RU',{hour12:false})}</time><i className="log-dot"/><div className="log-content"><span className="log-message">{x.summary||x.text}{(x.count||0)>1&&<small>{repeatedLabel(x.count!)}</small>}</span>{(debug||['WARNING','ERROR','CRITICAL'].includes(x.level))&&x.text&&<details className="log-details"><summary>Технические подробности</summary><pre>{x.text}</pre></details>}</div></div>)}
+        {!visibleLogs.length&&<EmptyState icon="overview">Записи активности появятся здесь</EmptyState>}<div ref={logEnd}/></div></section>);
+  const resourcePanel=(<div key="resources" className="overview-side"><RunOverview data={status?.task_status}/><ResourceLevels data={status?.resource_farming}/><ResourceLevels data={status?.builder_resources} village="builder"/>
+      <label className="toggle overview-practice"><span>Режим практики</span><input type="checkbox" checked={practice} disabled={!!status?.active} onChange={e=>setPractice(e.target.checked)}/></label></div>);
+  if(checkingSession||(!signed&&!passwordRequired))return <main className="login" role="status">Подключение…</main>;
   if(!signed)return <main className="login"><form onSubmit={e=>{e.preventDefault();attempt(async()=>{
     const result=await api('login','POST',{password});csrf=result.csrf;setSigned(true);setPassword('');
-  });}}><h1>CoC Bot</h1><label>Password<input type="password" autoComplete="current-password"
+  });}}><h1>CoC Bot</h1><label>Пароль<input type="password" autoComplete="current-password"
     value={password} onChange={e=>setPassword(e.target.value)} required/></label>
-    <button className="primary" disabled={busy}>Sign in</button><p role="alert">{notice}</p></form></main>;
+    <button className="primary" disabled={busy}>Войти</button><p role="alert"><MessageText value={notice}/></p></form></main>;
   const fields=settings?.fields.filter(f=>f.key!=='gui_theme'&&(!f.advanced||values.gui_dev_options)&&
     (advanced||!f.expert)&&
     (advanced||BASIC_SETTINGS.has(f.key)||f.key.startsWith('upgrade_')||f.key.startsWith('progression_')||f.key.startsWith('builder_base_')||f.key.startsWith('layouts_')||f.key.startsWith('collection_'))&&
     (f.label+' '+f.description).toLowerCase().includes(search.toLowerCase()))||[];
-  return <div className="app"><a className="skip-link" href="#main-content">Skip to content</a><aside className="sidebar"><a className="brand" href="#" onClick={e=>{e.preventDefault();navigate('Dashboard');}}><span className="brand-icon"><Icon name="castle" size={23}/></span><span>CoC Bot</span></a>
-    <nav className="primary-nav" aria-label="Main navigation">{['Dashboard','Accounts','Settings','Setup','Library','Diagnostics'].map(p=><button key={p}
+  return <div className="app"><a className="skip-link" href="#main-content">Перейти к содержимому</a><aside className="sidebar"><a className="brand" href="#" onClick={e=>{e.preventDefault();navigate('Dashboard');}}><span className="brand-icon"><Icon name="castle" size={23}/></span><span>CoC Bot</span></a>
+    <nav className="primary-nav" aria-label="Главная навигация">{['Dashboard','Accounts','Settings','Setup','Library','Diagnostics'].map(p=><button key={p}
       aria-label={pageLabels[p]} title={pageLabels[p]} aria-current={page===p?'page':undefined} className={page===p?'selected':''} onClick={()=>navigate(p)}><Icon name={pageIcons[p]}/><span>{pageLabels[p]}</span>{page===p&&<i/>}</button>)}</nav>
-    <div className="sidebar-bottom"><button className="account-shortcut" onClick={()=>navigate('Accounts')}><span className="avatar">{status?.account?.nickname?.slice(0,2).toUpperCase()||'CC'}</span><span><strong>{status?.account?.nickname||'No account selected'}</strong><small><i className={'status-dot '+(online?'connected':'')}/>{online?'Connected':'Reconnecting'}</small></span><Icon name="chevron" size={15}/></button>
-    {FIRST_LAUNCH&&<button disabled={locked} onClick={()=>location.assign('/')}>Exit first-launch test</button>}
-    {passwordRequired&&<button className="quiet" onClick={()=>attempt(async()=>{await api('logout','POST');expired();})}><Icon name="logout" size={17}/>Sign out</button>}</div></aside>
-    <main id="main-content" className={'page page-'+page.toLowerCase()}>{FIRST_LAUNCH&&<div className="notice">First-launch test · changes are kept separate from your saved setup.</div>}
+    <div className="sidebar-bottom"><button className="account-shortcut" onClick={()=>navigate('Accounts')}><span className="avatar">{status?.account?.nickname?.slice(0,2).toUpperCase()||'CC'}</span><span><strong>{status?.account?.nickname||'Аккаунт не выбран'}</strong><small><i className={'status-dot '+(online?'connected':'')}/>{online?'Подключено':'Повторное подключение'}</small></span><Icon name="chevron" size={15}/></button>
+    {FIRST_LAUNCH&&<button disabled={locked} onClick={()=>location.assign('/')}>Выйти из тестового режима первого запуска</button>}
+    {passwordRequired&&<button className="quiet" onClick={()=>attempt(async()=>{await api('logout','POST');expired();})}><Icon name="logout" size={17}/>Выйти</button>}</div></aside>
+    <main id="main-content" className={'page page-'+page.toLowerCase()}>{FIRST_LAUNCH&&<div className="notice">Тест первого запуска · изменения не затрагивают сохранённую настройку.</div>}
     <header className="page-header"><h1>{pageLabels[page]||page}</h1><div className="header-actions">
       {status?.account&&<button className="header-account quiet" title={status.account.nickname} onClick={()=>navigate('Accounts')}><span className="avatar">{status.account.nickname.slice(0,2).toUpperCase()}</span><span>{status.account.nickname}</span></button>}
-      {!online&&<span className="connection"><i className="status-dot working"/>Reconnecting</span>}
-      {page!=='Dashboard'&&canStop&&<button className="danger" disabled={!online} onClick={()=>command('stop')}><Icon name="stop" size={16}/>Stop</button>}
-      <button className="live-button" aria-label="Live view" disabled={!online} onClick={()=>setLive(true)}><Icon name="video" size={18}/><span>Live view</span></button>
+      {!online&&<span className="connection"><i className="status-dot working"/>Повторное подключение</span>}
+      {page!=='Dashboard'&&canStop&&<button className="danger" disabled={!online} onClick={()=>command('stop')}><Icon name="stop" size={16}/>Остановить</button>}
+      <PhoneAccess api={api}/><button className="live-button" aria-label="Трансляция экрана" disabled={!online} onClick={()=>setLive(true)}><Icon name="video" size={18}/><span>Трансляция экрана</span></button>
     </div></header>
-    {notice&&<div className="notice" role="status"><span>{notice}</span><button className="icon-button" aria-label="Dismiss message" onClick={()=>setNotice('')}><Icon name="close" size={17}/></button></div>}
-    {status?.account_pending&&page!=='Accounts'&&<div className="notice">Finish account setup before starting automation.<button onClick={()=>navigate('Accounts')}>Accounts</button></div>}
-    {status?.platform&&!status.platform.ready&&<div className="notice" role="status">{status.platform.message}
-      {!status.platform.busy&&<button disabled={locked} onClick={()=>command('runtime/retry')}>Retry startup</button>}
-      {status.platform.stage==='needs_game'&&<label className="upload">Import Clash APK archive
+    {notice&&<div className="notice" role="status"><MessageText value={notice}/><button className="icon-button" aria-label="Закрыть сообщение" onClick={()=>setNotice('')}><Icon name="close" size={17}/></button></div>}
+    {status?.account_pending&&page!=='Accounts'&&<div className="notice">Завершите настройку аккаунта перед запуском автоматизации.<button onClick={()=>navigate('Accounts')}>Аккаунты</button></div>}
+    {status?.platform&&!status.platform.ready&&<div className="notice" role="status"><MessageText value={status.platform.message}/>
+      {!status.platform.busy&&<button disabled={locked} onClick={()=>command('runtime/retry')}>Повторить запуск</button>}
+      {status.platform.stage==='needs_game'&&<label className="upload">Импортировать архив APK Clash
         <input type="file" accept=".zip" disabled={locked} onChange={e=>{
           const file=e.target.files?.[0];e.target.value='';if(file)importGame(file);
         }}/></label>}
@@ -265,116 +282,116 @@ function App(){
     {page==='Dashboard'&&<>
       <section className={'play panel '+(status?.active?'is-running':'')}>
       <div className="run-state"><span className={'run-indicator '+(status?.active?'running':status?.error?'failed':'')}><Icon name={status?.active?'refresh':status?.error?'info':'castle'} size={23}/></span>
-        <div><div className="run-status"><span className={'status-dot '+(status?.active?'connected':status?.error?'failed':'')}/>{status?.manual_control?'Manual control':status?.active?(status.state==='running'?'Running':status.state.replaceAll('_',' ')):status?.state==='failed'?'Needs attention':'Stopped'}{practice&&<span className="badge">Practice</span>}</div>
-        <strong className="run-activity">{status?.manual_control?'You have control':status?.active?(status.state==='stopping'?'Stopping safely…':status.activity||'Preparing automation'):status?.error?'Automation paused':status?.platform?.busy?'Preparing the game':'Ready when you are'}</strong></div>
+        <div><div className="run-status"><span className={'status-dot '+(status?.active?'connected':status?.error?'failed':'')}/>{status?.manual_control?'Ручное управление':status?.active?presentState(status.state):status?.state==='failed'?'Требуется внимание':'Остановлен'}{practice&&<span className="badge">Практика</span>}</div>
+        <strong className="run-activity">{status?.manual_control?'Управление у вас':status?.active?(status.state==='stopping'?'Безопасная остановка…':status.activity_label||status.activity||'Подготовка автоматизации'):status?.error?'Автоматизация приостановлена':status?.platform?.busy?'Подготовка игры':'Готов к запуску'}</strong></div>
       </div>
-      <div className="controls"><button className="primary" disabled={locked||!!(status?.platform&&!status.platform.ready)} onClick={()=>command('start',{practice})}><Icon name="play" size={17}/>Start</button>
-        <button className="danger" disabled={!online||!canStop} onClick={()=>command('stop')}><Icon name="stop" size={16}/>Stop</button>
+      <div className="controls"><button className="primary" disabled={locked||!!(status?.platform&&!status.platform.ready)} onClick={()=>command('start',{practice})}><Icon name="play" size={17}/>Запустить</button>
+        <button className="danger" disabled={!online||!canStop} onClick={()=>command('stop')}><Icon name="stop" size={16}/>Остановить</button>
         <button disabled={!online||busy||status?.manual_control||!!(status?.platform&&!status.platform.ready)||
           (status?.active&&(status.operation!=='bot'||status.state!=='running'))}
-          onClick={()=>attempt(()=>api('farm','POST'))}><Icon name="swords" size={17}/>Farm now</button></div>
-      {status?.error&&<div className="run-error" role="alert"><Icon name="info" size={17}/>{status.error}</div>}</section>
-      <div className="dashboard-grid">{[resourcePanel,activityPanel]}</div>
+          onClick={()=>attempt(()=>api('farm','POST'))}><Icon name="swords" size={17}/>Начать фарм</button></div>
+      {(status?.error_label||status?.error)&&<div className="run-error" role="alert"><Icon name="info" size={17}/><MessageText value={status.error_label||status.error}/></div>}</section>
+      <div className="dashboard-grid">{[resourcePanel,<div key="activity-feed" className="overview-feed">{activityPanel}<BattleHistory key={status?.account?.id||''} base={BASE}/></div>]}</div>
     </>}
     {page==='Accounts'&&<Accounts api={api} locked={locked} result={status?.result} operation={status?.operation||null}
       working={!!status?.active} jobError={status?.error||null} live={()=>setLive(true)} onChanged={reload} stop={()=>command('stop')}/>}
-    {accountChanged&&dirty&&<div className="notice" role="status">Your unsaved settings belong to {workspaceAccount?.nickname||'the previous profile'}. The active account has changed.
-      <button onClick={()=>{if(confirm('Discard this draft and load the active account?'))attempt(reload);}}>Load active account</button></div>}
+    {accountChanged&&dirty&&<div className="notice" role="status">Несохранённые настройки относятся к аккаунту «{workspaceAccount?.nickname||'предыдущий профиль'}». Активный аккаунт изменился.
+      <button onClick={()=>{if(confirm('Отменить этот черновик и загрузить настройки активного аккаунта?'))attempt(reload);}}>Загрузить настройки активного аккаунта</button></div>}
     {page==='Settings'&&<SettingsPanel fields={fields} values={values} search={search} setSearch={setSearch} advanced={advanced} setAdvanced={setAdvanced}
       dirty={dirty} saving={savingSettings||!!status?.settings_update} restarting={restartRequired&&!!status?.active&&status.operation==='bot'}
       saveDisabled={!online||busy||savingSettings||!!status?.settings_update||!!status?.manual_control||!!status?.account_pending||accountChanged||!dirty}
-      resetDisabled={busy||savingSettings||!!status?.settings_update} save={save} reset={()=>{if(!dirty||confirm('Discard unsaved settings?'))attempt(reload);}}
+      resetDisabled={busy||savingSettings||!!status?.settings_update} save={save} reset={()=>{if(!dirty||confirm('Отменить несохранённые настройки?'))attempt(reload);}}
       edit={editSetting} updateMessage={status?.settings_update}/>}
     {page==='Setup'&&<><div className="page-actions">
-      <label className="toggle"><input type="checkbox" checked={advancedSetup} onChange={e=>{setAdvancedSetup(e.target.checked);setQueue([]);setSelected('');}}/>Advanced</label>
-      <span className="item-count">{setupSteps.flatMap(s=>s.parts).filter(p=>p.configured).length} / {setupSteps.flatMap(s=>s.parts).length} configured</span><div className="action-spacer"/>
-      <button disabled={locked||!setup} onClick={()=>beginSetup(false)}>Recalibrate all</button>
-      <button className="primary" disabled={locked||!setup} onClick={()=>beginSetup(true)}><Icon name="setup" size={17}/>Set up missing</button>
-      {!!queue.length&&<button onClick={()=>setQueue([])}>Exit guided setup</button>}</div>
-      <div className="setup"><section className="checklist panel" aria-label="Calibration steps">
-      {setupSteps.map(s=><details open key={s.id}><summary><span>{s.label}</span><small>{s.parts.filter(p=>p.configured).length}/{s.parts.length}</small></summary>{s.parts.map(p=><button key={p.key}
+      <label className="toggle"><input type="checkbox" checked={advancedSetup} onChange={e=>{setAdvancedSetup(e.target.checked);setQueue([]);setSelected('');}}/>Дополнительно</label>
+      <span className="item-count">{setupSteps.flatMap(s=>s.parts).filter(p=>p.configured).length} / {setupSteps.flatMap(s=>s.parts).length} настроено</span><div className="action-spacer"/>
+      <button disabled={locked||!setup} onClick={()=>beginSetup(false)}>Повторить всю калибровку</button>
+      <button className="primary" disabled={locked||!setup} onClick={()=>beginSetup(true)}><Icon name="setup" size={17}/>Настроить недостающее</button>
+      {!!queue.length&&<button onClick={()=>setQueue([])}>Выйти из пошаговой настройки</button>}</div>
+      <div className="setup"><section className="checklist panel" aria-label="Шаги калибровки">
+      {setupSteps.map(s=><details open key={s.id}><summary><span>{setupStepLabel(s.id,s.label)}</span><small>{s.parts.filter(p=>p.configured).length}/{s.parts.length}</small></summary>{s.parts.map(p=><button key={p.key}
       aria-current={part?.key===p.key?'step':undefined} className={part?.key===p.key?'selected':''} onClick={()=>{setSelected(p.key);setQueue([]);}}>
-        <span className={p.configured?'complete':'missing'}>{p.configured?<Icon name="check" size={14}/>:<i/>}</span><span>{p.label}</span></button>)}</details>)}
+        <span className={p.configured?'complete':'missing'}>{p.configured?<Icon name="check" size={14}/>:<i/>}</span><span>{setupPartLabel(p.key,p.label)}</span></button>)}</details>)}
       </section><section className="guide panel">{part?<>
-        <div className="guide-state"><span className={'badge '+(part.configured?'configured':'')}>{part.configured?'Configured':'Not configured'}</span>{part.optional&&<span className="badge">Optional</span>}</div>
-        <h2>{part.label}</h2><p className="instructions">{part.instructions}</p>
-        <div className="toolbar"><button className="primary" disabled={locked} onClick={()=>captureScreen(part)}>Capture screen</button>
-        {part.key==='deploy_sequence'&&<button disabled={locked} onClick={()=>captureScreen(part,true)}>Pan and capture</button>}
-        <button onClick={advance}>Skip<Icon name="chevron" size={15}/></button>
+        <div className="guide-state"><span className={'badge '+(part.configured?'configured':'')}>{part.configured?'Настроено':'Не настроено'}</span>{part.optional&&<span className="badge">Необязательно</span>}</div>
+        <h2>{setupPartLabel(part.key,part.label)}</h2><p className="instructions">{setupInstruction(part.key,part.instructions)}</p>
+        <div className="toolbar"><button className="primary" disabled={locked} onClick={()=>captureScreen(part)}>Сделать снимок</button>
+        {part.key==='deploy_sequence'&&<button disabled={locked} onClick={()=>captureScreen(part,true)}>Сдвинуть и снять</button>}
+        <button onClick={advance}>Пропустить<Icon name="chevron" size={15}/></button>
         </div>
-      </>:<EmptyState icon="setup">Loading setup…</EmptyState>}</section></div></>}
+      </>:<EmptyState icon="setup">Загрузка параметров…</EmptyState>}</section></div></>}
     {page==='Library'&&<>
-      <div className="page-actions"><div className="tabs" aria-label="Library views">{['Calibrations','Screenshots'].map(tab=><button key={tab} aria-pressed={libraryTab===tab} className={libraryTab===tab?'selected':''} onClick={()=>setLibraryTab(tab)}>{tab}</button>)}</div><div className="action-spacer"/><button className="icon-button" aria-label="Refresh library" onClick={()=>attempt(reload)}><Icon name="refresh" size={18}/></button></div>
-      {libraryTab==='Calibrations'&&<><div className="toolbar"><button className="primary" disabled={locked} onClick={()=>attempt(async()=>{await api('backups','POST');await reload();})}><Icon name="plus" size={17}/>Back up calibration</button>
-        <button disabled={locked} onClick={()=>{const name=prompt('Profile name');if(name)attempt(async()=>{await api('profiles','POST',{name});await reload();});}}>Save profile</button>
-        <label className="upload">Import calibration<input type="file" accept=".zip" disabled={locked} onChange={e=>{
-          const file=e.target.files?.[0];if(!file)return;const name=prompt('Imported calibration name',file.name.replace(/\.zip$/i,''));
+      <div className="page-actions"><div className="tabs" aria-label="Разделы библиотеки">{[['Calibrations','Калибровки'],['Screenshots','Снимки экрана']].map(([tab,label])=><button key={tab} aria-pressed={libraryTab===tab} className={libraryTab===tab?'selected':''} onClick={()=>setLibraryTab(tab)}>{label}</button>)}</div><div className="action-spacer"/><button className="icon-button" aria-label="Обновить библиотеку" onClick={()=>attempt(reload)}><Icon name="refresh" size={18}/></button></div>
+      {libraryTab==='Calibrations'&&<><div className="toolbar"><button className="primary" disabled={locked} onClick={()=>attempt(async()=>{await api('backups','POST');await reload();})}><Icon name="plus" size={17}/>Сохранить копию калибровки</button>
+        <button disabled={locked} onClick={()=>{const name=prompt('Название профиля');if(name)attempt(async()=>{await api('profiles','POST',{name});await reload();});}}>Сохранить профиль</button>
+        <label className="upload">Импортировать калибровку<input type="file" accept=".zip" disabled={locked} onChange={e=>{
+          const file=e.target.files?.[0];if(!file)return;const name=prompt('Название импортированной калибровки',file.name.replace(/\.zip$/i,''));
           if(name)attempt(async()=>{const response=await fetch(BASE+'/api/backups/import?name='+encodeURIComponent(name),{
             method:'POST',headers:{'X-CSRF-Token':csrf,'Content-Type':'application/zip'},body:file});
             if(!response.ok)throw new Error(await response.text());await reload();});e.target.value='';
         }}/></label>
         </div>
       <section className="backup-list panel">{backups.map(b=><div className="setting backup-row" key={b.id}><span><Icon name="library" size={18}/>{b.label}</span><div className="toolbar">
-        <button disabled={locked} onClick={()=>confirm('Restore this calibration? A safety backup will be saved.')&&attempt(async()=>{await api('backups/'+b.id+'/restore','POST');await reload();})}>Restore</button>
-        <a href={BASE+'/api/backups/'+b.id+'/export'} download>Export</a>
-        <button disabled={locked} onClick={()=>{const name=prompt('Calibration name',b.label);if(name)attempt(async()=>{await api('backups/'+b.id,'PATCH',{name});await reload();});}}>Rename</button>
-        <button className="danger-quiet" disabled={locked} onClick={()=>confirm('Delete this saved calibration?')&&attempt(async()=>{await api('backups/'+b.id,'DELETE');await reload();})}>Delete</button>
-      </div></div>)}{!backups.length&&<EmptyState icon="library">No saved calibrations</EmptyState>}</section></>}
-      {libraryTab==='Screenshots'&&<>{collection&&<div className="collection-status"><span className={'status-dot '+(!collection.paused?'connected':'')}/>{collection.paused?'Paused: '+collection.paused:
-        'Collecting'}<span>{collection.stats?.saved??0} saved</span><span>{Math.round((collection.approximate_storage_bytes??0)/1024/1024)} MB</span></div>}
+        <button disabled={locked} onClick={()=>confirm('Восстановить эту калибровку? Будет сохранена резервная копия.')&&attempt(async()=>{await api('backups/'+b.id+'/restore','POST');await reload();})}>Восстановить</button>
+        <a href={BASE+'/api/backups/'+b.id+'/export'} download>Экспортировать</a>
+        <button disabled={locked} onClick={()=>{const name=prompt('Название калибровки',b.label);if(name)attempt(async()=>{await api('backups/'+b.id,'PATCH',{name});await reload();});}}>Переименовать</button>
+        <button className="danger-quiet" disabled={locked} onClick={()=>confirm('Удалить сохранённую калибровку?')&&attempt(async()=>{await api('backups/'+b.id,'DELETE');await reload();})}>Удалить</button>
+      </div></div>)}{!backups.length&&<EmptyState icon="library">Нет сохранённых калибровок</EmptyState>}</section></>}
+      {libraryTab==='Screenshots'&&<>{collection&&<div className="collection-status"><span className={'status-dot '+(!collection.paused?'connected':'')}/>{collection.paused?'Пауза: '+localizedCollectionReason(collection.paused):
+        'Сбор снимков'}<span>Сохранено: {collection.stats?.saved??0}</span><span>{Math.round((collection.approximate_storage_bytes??0)/1024/1024)} МБ</span></div>}
       <div className="gallery">{gallery.map(x=><a key={x.id} href={BASE+'/api/library/images/'+x.id} target="_blank" rel="noreferrer">
         <img src={BASE+'/api/library/images/'+x.id} alt={x.label} loading="lazy"/><span>{x.label}</span></a>)}</div>
-      {!gallery.length&&<EmptyState icon="image">No screenshots collected yet</EmptyState>}
+      {!gallery.length&&<EmptyState icon="image">Снимки экрана пока не собраны</EmptyState>}
       {galleryTotal>24&&<div className="toolbar">{[-24,24].map(delta=><button key={delta}
         disabled={galleryOffset+delta<0||galleryOffset+delta>=galleryTotal}
         onClick={()=>attempt(async()=>{const next=galleryOffset+delta,data=await api('library?offset='+next);setGallery(data.images);setGalleryOffset(next);})}>
-        {delta<0?'Previous':'Next'}</button>)}</div>}</>}
+        {delta<0?'Назад':'Далее'}</button>)}</div>}</>}
     </>}
     {page==='Diagnostics'&&<>
-      <div className="page-actions"><div className="tabs" aria-label="Tool categories">{['Upgrades','Device','Donations','Attacks','System'].map(group=><button key={group} aria-pressed={toolGroup===group} className={toolGroup===group?'selected':''} onClick={()=>setToolGroup(group)}>{group}</button>)}</div></div>
+      <div className="page-actions"><div className="tabs" aria-label="Категории инструментов">{[['Upgrades','Улучшения'],['Device','Устройство'],['Donations','Пожертвования'],['Attacks','Атаки'],['System','Система']].map(([group,label])=><button key={group} aria-pressed={toolGroup===group} className={toolGroup===group?'selected':''} onClick={()=>setToolGroup(group)}>{label}</button>)}</div></div>
       {toolGroup==='Attacks'&&<AttackPlanner api={api} base={BASE} result={status?.result} locked={locked}/>}
       {toolGroup==='Upgrades'&&<div className="upgrade-grid">{(['buildings','research','pets'] as const).map(kind=>{
         const report=status?.result?.upgrade_report&&status.result.kind===kind?status.result:null;
         return <section key={kind} className="panel upgrade-card">
-          <div className="upgrade-card-label"><span className="tool-icon"><Icon name={{buildings:'hammer',research:'swords',pets:'heart'}[kind]} size={23}/></span><span>{{buildings:'Building upgrades',research:'Army research',pets:'Pet upgrades'}[kind]}</span></div><div className="upgrade-actions">
-            <button disabled={locked} onClick={()=>command('upgrades/preview',{kind})}>Check upgrades</button>
+          <div className="upgrade-card-label"><span className="tool-icon"><Icon name={{buildings:'hammer',research:'swords',pets:'heart'}[kind]} size={23}/></span><span>{{buildings:'Улучшения построек',research:'Исследования войск',pets:'Улучшения питомцев'}[kind]}</span></div><div className="upgrade-actions">
+            <button disabled={locked} onClick={()=>command('upgrades/preview',{kind})}>Проверить улучшения</button>
             <button disabled={locked||report?.status!=='ready'||!report?.token} onClick={()=>{
               const item=report.selected;
-              if(confirm(`Start ${item.name} for ${item.cost.toLocaleString()} ${item.currency.replaceAll('_',' ')}?`))
+              if(confirm(`Начать улучшение «${item.name}» за ${item.cost.toLocaleString('ru-RU')} ${currencyLabels[item.currency]||item.currency.replaceAll('_',' ')}?`))
                 command('upgrades/start',{kind,token:report.token});
-            }}>Start recommended upgrade</button></div>
+            }}>Начать рекомендованное улучшение</button></div>
           {report&&<div role="status">
-            {report.message&&<p>{report.message}</p>}
-            {report.availability&&<p>{report.availability[0]} / {report.availability[1]} {{buildings:'builders',research:'research slots',pets:'pet-upgrade slots'}[kind]} free</p>}
+            {report.message&&<p><MessageText value={report.message}/></p>}
+            {report.availability&&<p>{report.availability[0]} / {report.availability[1]} {{buildings:'строителей',research:'ячеек лаборатории',pets:'ячеек улучшения питомцев'}[kind]} свободно</p>}
             {report.recommendations?.map((item:any,index:number)=><div className="setting" key={index}>
-              <span>{item.name}</span><span>{item.cost.toLocaleString()} {item.currency.replaceAll('_',' ')} · {item.skip||'Eligible'}</span>
+              <span>{item.name}</span><span>{item.cost.toLocaleString('ru-RU')} {currencyLabels[item.currency]||item.currency.replaceAll('_',' ')} · {item.skip?upgradeStatus(item.skip):'Можно улучшить'}</span>
             </div>)}
           </div>}
         </section>;
       })}</div>}
       {toolGroup==='System'&&status?.platform&&<div className="toolbar">
-        <button disabled={locked} onClick={()=>command('runtime/update-game')}>Update Clash</button>
-        {status.platform.game_update&&<span role="status">{status.platform.game_update}</span>}
+        <button disabled={locked} onClick={()=>command('runtime/update-game')}>Обновить Clash</button>
+        {status.platform.game_update&&<span role="status"><MessageText value={status.platform.game_update}/></span>}
       </div>}
-      {(toolGroup==='Device'||toolGroup==='System')&&<div className="toolbar">{toolGroup==='Device'&&<><button disabled={locked} onClick={()=>captureScreen()}><Icon name="image" size={17}/>Current screenshot</button>
-        <button disabled={locked} onClick={()=>setViewer(true)}>Open game</button></>}
+      {(toolGroup==='Device'||toolGroup==='System')&&<div className="toolbar">{toolGroup==='Device'&&<><button disabled={locked} onClick={()=>captureScreen()}><Icon name="image" size={17}/>Текущий снимок экрана</button>
+        <button disabled={locked} onClick={()=>setViewer(true)}>Открыть игру</button></>}
         {!!values.gui_dev_options&&<button disabled={locked} onClick={()=>attempt(async()=>{
           if(!FIRST_LAUNCH)await api('first-launch/reset','POST');
           location.assign(FIRST_LAUNCH?'/':'/first-launch/');
         })}>
-          {FIRST_LAUNCH?'Exit first-launch test':'Simulate first launch'}</button>}
-        <button onClick={()=>attempt(async()=>{const data=await api('readiness');setNotice(data.issues.length?data.issues.join(' · '):'Calibration checks passed');})}>Check calibration</button>
-        <button onClick={()=>{const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([logs.map(x=>x.at+' '+x.level+' '+x.text).join('\n')],{type:'text/plain'}));a.download='bot-activity.txt';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);}}>Export activity</button>
-        <a href={BASE+'/api/report'} download="bot-report.json">Download report</a></div>}
-      <section className="diagnostic-list">{[['health_check','Check device'],['classify_screen','Recognize screen'],['zoom_home','Test zoom out at home'],['inspect_attack','Inspect army and opponent map'],['open_clan_chat','Open clan chat'],
-        ['find_classify_request','Inspect request'],['open_donation','Open donation'],['close_donation','Close donation'],
-        ['scroll_chat','Scroll chat'],['anti_idle','Test inactivity nudge'],['farm_open_attack','Open Attack menu'],
-        ['farm_start_search','Start opponent search'],['farm_classify','Recognize battle'],
-        ['farm_deploy_dry','Preview deploy taps'],['farm_clear_deploy','Clear deploy sequence'],
-        ['force_stop','Close Clash'],['close_waydroid','Close Waydroid and Clash'],
-        ['relaunch','Relaunch Clash']].filter(([id])=>toolCategory(id)===toolGroup).map(([id,label])=>
+          {FIRST_LAUNCH?'Выйти из тестового режима первого запуска':'Смоделировать первый запуск'}</button>}
+        <button onClick={()=>attempt(async()=>{const data=await api('readiness');setNotice(data.issues.length?data.issues.join(' · '):'Проверки калибровки пройдены');})}>Проверить калибровку</button>
+        <button onClick={()=>{const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([logs.map(x=>x.at+' '+(levelLabels[x.level]||x.level)+' '+(x.summary||x.text)+(x.summary&&x.text?'\n  '+x.text:'')).join('\n')],{type:'text/plain'}));a.download='bot-activity.txt';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);}}>Экспортировать журнал активности</button>
+        <a href={BASE+'/api/report'} download="bot-report.json">Скачать отчёт</a></div>}
+      <section className="diagnostic-list">{[['health_check','Проверить устройство'],['classify_screen','Распознать экран'],['zoom_home','Проверить отдаление камеры дома'],['inspect_attack','Проверить армию и карту противника'],['open_clan_chat','Открыть клановый чат'],
+        ['find_classify_request','Проверить запрос'],['open_donation','Открыть пожертвование'],['close_donation','Закрыть окно пожертвования'],
+        ['scroll_chat','Прокрутить чат'],['anti_idle','Проверить защиту от бездействия'],['farm_open_attack','Открыть меню атаки'],
+        ['farm_start_search','Начать поиск противника'],['farm_classify','Распознать бой'],
+        ['farm_deploy_dry','Предпросмотр нажатий высадки'],['farm_clear_deploy','Очистить последовательность высадки'],
+        ['force_stop','Закрыть Clash'],['close_waydroid','Закрыть Waydroid и Clash'],
+        ['relaunch','Перезапустить Clash']].filter(([id])=>toolCategory(id)===toolGroup).map(([id,label])=>
         <button className="diagnostic-action panel" key={id} disabled={locked}
-          onClick={()=>{if(id==='farm_clear_deploy'&&!confirm('Remove your saved farm deploy sequence?'))return;
+          onClick={()=>{if(id==='farm_clear_deploy'&&!confirm('Удалить сохранённую последовательность высадки для фарма?'))return;
             attempt(()=>api('diagnostics/'+id,'POST'));}}><Icon name={pageIcons[toolGroup==='Device'?'Diagnostics':toolGroup==='Attacks'?'Attacks':'Setup']} size={19}/><span>{label}</span><Icon name="chevron" size={16}/></button>)}</section>
       {toolGroup==='Attacks'&&status?.result?.attack_observation&&!status.result.survey&&<AttackObservation report={status.result} base={BASE}
         save={(id,revision,corrections)=>api('attack-observations/'+id,'PATCH',{revision,corrections})}/>}
@@ -405,7 +422,7 @@ function LiveView({close,active,recovering,ready,stop}:{close:()=>void;active:bo
     const x=(e.clientX-r.left-(r.width-w)/2)/w,y=(e.clientY-r.top-(r.height-h)/2)/h;
     return x>=0&&x<=1&&y>=0&&y<=1?[x,y]:null;
   }
-  const [state,setState]=useState('Connecting…'),[error,setError]=useState('');
+  const [state,setState]=useState('Подключение…'),[error,setError]=useState('');
   const [fps,setFps]=useState<number|null>(null);
   const [retry,setRetry]=useState(0);
   const runtimeWasRecovering=useRef(false);
@@ -423,13 +440,13 @@ function LiveView({close,active,recovering,ready,stop}:{close:()=>void;active:bo
     pc.addTransceiver('video',{direction:'recvonly'});
     const ws=new WebSocket((location.protocol==='https:'?'wss://':'ws://')+location.host+BASE+'/api/live/ws');
     socket.current=ws;setToken(null);setPlaying(false);gesture.current=null;
-    setError('');setState('Connecting…');setFps(null);
+    setError('');setState('Подключение…');setFps(null);
     const element=video.current,played=()=>{clearTimeout(timeout);lastProgress=performance.now();};
     element?.addEventListener('playing',played);
-    function fail(message:string){if(disposed||failed)return;failed=true;setPlaying(false);setFps(null);setToken(null);gesture.current=null;setState('Unavailable');setError(message);clearInterval(timer);clearInterval(frameTimer);clearTimeout(timeout);ws.close();pc.close();}
-    pc.ontrack=e=>{if(video.current){video.current.srcObject=new MediaStream([e.track]);video.current.play().catch(()=>fail('Playback blocked. Close and reopen Live view.'));}};
+    function fail(message:string){if(disposed||failed)return;failed=true;setPlaying(false);setFps(null);setToken(null);gesture.current=null;setState('Недоступно');setError(message);clearInterval(timer);clearInterval(frameTimer);clearTimeout(timeout);ws.close();pc.close();}
+    pc.ontrack=e=>{if(video.current){video.current.srcObject=new MediaStream([e.track]);video.current.play().catch(()=>fail('Воспроизведение заблокировано. Закройте и снова откройте трансляцию экрана.'));}};
     pc.onconnectionstatechange=()=>{
-      if(pc.connectionState==='failed')fail('Live connection failed. Retry to reconnect.');
+      if(pc.connectionState==='failed')fail('Соединение трансляции потеряно. Повторите попытку.');
     };
     ws.onmessage=async e=>{
       try{
@@ -461,25 +478,25 @@ function LiveView({close,active,recovering,ready,stop}:{close:()=>void;active:bo
               if(sampled){
                 setFps(Math.max(0,Math.round((frames-lastFrames)*1000/(now-lastCheck))));
                 if(frames>lastFrames)lastProgress=now;
-                else if(element?.readyState===4&&now-lastProgress>12000)fail('Video stopped updating. Retry to reconnect the live stream.');
+                else if(element?.readyState===4&&now-lastProgress>12000)fail('Видео перестало обновляться. Повторите попытку подключения к трансляции.');
               }else{lastProgress=now;sampled=true;}
               lastFrames=frames;lastCheck=now;
-            }catch{if(!disposed&&!failed)fail('Unable to verify live video. Retry to reconnect.');}
+            }catch{if(!disposed&&!failed)fail('Не удалось проверить трансляцию видео. Повторите попытку подключения.');}
           },2000);
         }
       }catch(e){fail((e as Error).message);}
     };
-    ws.onclose=()=>{if(!disposed)fail('Live view disconnected. Retry to reconnect.');};
-    ws.onerror=()=>fail('Unable to connect to live view.');
-    timeout=setTimeout(()=>fail('Live view timed out. Check the device connection and retry.'),25000);
+    ws.onclose=()=>{if(!disposed)fail('Трансляция отключена. Повторите попытку подключения.');};
+    ws.onerror=()=>fail('Не удалось подключиться к трансляции экрана.');
+    timeout=setTimeout(()=>fail('Истекло время ожидания трансляции. Проверьте подключение устройства и повторите попытку.'),25000);
     return ()=>{disposed=true;clearInterval(timer);clearInterval(frameTimer);clearTimeout(timeout);ws.close();pc.close();socket.current=null;gesture.current=null;element?.removeEventListener('playing',played);if(element)element.srcObject=null;};
   },[retry]);
-  return <div className="modal-backdrop"><section ref={dialog} className="modal" role="dialog" aria-modal="true" aria-label="Live view">
-    <div className="toolbar"><h2>Live view</h2><span>{playing&&!error?`${token?'Live · You have control':'Live · View only'}${fps===null?'':` · ${fps} fps`}`:state}</span>
-      <button disabled={!playing||!!error||(!token&&active)} onClick={()=>{gesture.current=null;setControlError('');send({type:token?'release_control':'take_control'});}}>{token?'Release control':'Take control'}</button>
-      <button className="danger" disabled={!active&&!token&&!recovering} onClick={()=>{gesture.current=null;stop();}}>Stop</button><button onClick={close}>Close</button></div>
-    {controlError&&<div className="notice" role="alert">{controlError}</div>}
-    {error&&<div className="notice" role="alert">{error}<button onClick={()=>setRetry(x=>x+1)}>Retry</button></div>}
+  return <div className="modal-backdrop"><section ref={dialog} className="modal" role="dialog" aria-modal="true" aria-label="Трансляция экрана">
+    <div className="toolbar"><h2>Трансляция экрана</h2><span>{playing&&!error?`${token?'Трансляция · управление у вас':'Трансляция · только просмотр'}${fps===null?'':` · ${fps} кадр/с`}`:state}</span>
+      <button disabled={!playing||!!error||(!token&&active)} onClick={()=>{gesture.current=null;setControlError('');send({type:token?'release_control':'take_control'});}}>{token?'Отпустить управление':'Взять управление'}</button>
+      <button className="danger" disabled={!active&&!token&&!recovering} onClick={()=>{gesture.current=null;stop();}}>Остановить</button><button onClick={close}>Закрыть</button></div>
+    {controlError&&<div className="notice" role="alert"><MessageText value={controlError}/></div>}
+    {error&&<div className="notice" role="alert"><MessageText value={error}/><button onClick={()=>setRetry(x=>x+1)}>Повторить</button></div>}
     <video ref={video} hidden={!!error} className={'game live-video'+(token?' controlled':'')} autoPlay playsInline muted onPlaying={()=>{setPlaying(true);setState('Live');}}
       onPointerDown={e=>{if(!token||e.button!==0)return;const p=point(e);if(!p)return;gesture.current={point:p,pointer:e.pointerId,token};e.currentTarget.setPointerCapture(e.pointerId);e.preventDefault();}}
       onPointerCancel={()=>{gesture.current=null;}}
@@ -488,7 +505,7 @@ function LiveView({close,active,recovering,ready,stop}:{close:()=>void;active:bo
         const v=e.currentTarget;const swipe=Math.hypot((p[0]-g.point[0])*v.videoWidth,(p[1]-g.point[1])*v.videoHeight)>12;
         send({type:swipe?'swipe':'tap',from:g.point,to:p,token});}}
       onClick={e=>{if(!token||performance.now()-pointerInputAt.current<500)return;const p=point(e);if(p)send({type:'tap',from:p,token});}}/>
-    {token&&<div className="toolbar"><button onClick={()=>send({type:'key',key:'back',token})}>Android Back</button><button onClick={()=>send({type:'key',key:'home',token})}>Android Home</button></div>}
+    {token&&<div className="toolbar"><button onClick={()=>send({type:'key',key:'back',token})}>Назад в Android</button><button onClick={()=>send({type:'key',key:'home',token})}>Домой в Android</button></div>}
   </section></div>;
 }
 
@@ -507,7 +524,7 @@ function GameViewer({close}:{close:()=>void}){
       url=URL.createObjectURL(e.data);setSource(url);
       timer=setTimeout(()=>{if(ws.readyState===WebSocket.OPEN)ws.send(JSON.stringify({type:'frame'}));},1000);
     };
-    ws.onclose=()=>setError('Game viewer closed. The bot remains stopped.');
+  ws.onclose=()=>setError('Просмотр игры закрыт. Бот остаётся остановленным.');
     return ()=>{clearTimeout(timer);ws.close();if(url)URL.revokeObjectURL(url);socket.current=null;};
   },[]);
   function send(value:unknown){if(socket.current?.readyState===WebSocket.OPEN)socket.current.send(JSON.stringify(value));}
@@ -516,14 +533,14 @@ function GameViewer({close}:{close:()=>void}){
     return [Math.max(0,Math.min(e.currentTarget.naturalWidth-1,Math.round((e.clientX-r.left)*e.currentTarget.naturalWidth/r.width))),
       Math.max(0,Math.min(e.currentTarget.naturalHeight-1,Math.round((e.clientY-r.top)*e.currentTarget.naturalHeight/r.height)))];
   }
-  return <div className="modal-backdrop"><section ref={dialog} className="modal" role="dialog" aria-modal="true" aria-label="Game viewer">
-    <div className="toolbar"><h2>Game</h2><button onClick={close}>Close</button></div>
-    {error?<p role="alert">{error}</p>:source?<img ref={image} src={source} alt="Current Android screen" className="game"
+  return <div className="modal-backdrop"><section ref={dialog} className="modal" role="dialog" aria-modal="true" aria-label="Просмотр игры">
+    <div className="toolbar"><h2>Игра</h2><button onClick={close}>Закрыть</button></div>
+    {error?<p role="alert"><MessageText value={error}/></p>:source?<img ref={image} src={source} alt="Текущий экран Android" className="game"
       draggable={false} onPointerDown={e=>{start.current=point(e);e.currentTarget.setPointerCapture(e.pointerId);}}
       onPointerUp={e=>{if(!start.current)return;const end=point(e),from=start.current;start.current=null;
-        send(Math.hypot(end[0]-from[0],end[1]-from[1])>12?{type:'swipe',from,to:end}:{type:'tap',from});}}/>:<p>Connecting…</p>}
-    <div className="toolbar"><button onClick={()=>send({type:'key',key:'back'})}>Android Back</button>
-      <button onClick={()=>send({type:'key',key:'home'})}>Android Home</button></div>
+        send(Math.hypot(end[0]-from[0],end[1]-from[1])>12?{type:'swipe',from,to:end}:{type:'tap',from});}}/>:<p>Подключение…</p>}
+    <div className="toolbar"><button onClick={()=>send({type:'key',key:'back'})}>Назад в Android</button>
+      <button onClick={()=>send({type:'key',key:'home'})}>Домой в Android</button></div>
   </section></div>;
 }
 
@@ -545,7 +562,7 @@ function Editor({capture,part,locked,close,save,refresh}:{capture:Capture;part:P
       if(proposed){setMode('box');setPoints([]);setBox(proposed.selection);
         if(proposed.cols)setCols(proposed.cols);if(proposed.rows)setRows(proposed.rows);}
       setSuggestionNote(result.message);
-    }catch(error){setSuggestionNote(error instanceof Error?error.message:'Unable to suggest an area. Draw it manually.');}
+    }catch(error){setSuggestionNote(error instanceof Error?error.message:'Не удалось предложить область. Выделите её вручную.');}
     finally{setSuggesting(false);}
   }
   const origin=useRef<number[]|null>(null);
@@ -583,27 +600,27 @@ function Editor({capture,part,locked,close,save,refresh}:{capture:Capture;part:P
       Math.max(0,Math.min(capture.height-1,Math.round((e.clientY-rect.top)*capture.height/rect.height)))];
   }
   return <div className="modal-backdrop"><section ref={dialog} className="modal" role="dialog" aria-modal="true"
-    aria-label={part?.label||'Game screenshot'}><div className="toolbar"><h2>{part?.label||'Game screenshot'}</h2>
-    <button disabled={locked} onClick={refresh}>Refresh screenshot</button><button onClick={close}>Cancel</button></div>
-    {part&&<p className="instructions">{part.instructions}</p>}
+    aria-label={part?setupPartLabel(part.key,part.label):'Снимок экрана игры'}><div className="toolbar"><h2>{part?setupPartLabel(part.key,part.label):'Снимок экрана игры'}</h2>
+    <button disabled={locked} onClick={refresh}>Обновить снимок</button><button onClick={close}>Отмена</button></div>
+    {part&&<p className="instructions">{setupInstruction(part.key,part.instructions)}</p>}
     {canSuggest&&<div className="toolbar"><button disabled={locked||suggesting} onClick={suggest}>
-      {suggesting?'Finding area…':'Suggest area'}</button>
-      <span role="status">{suggestionNote||'Preview a suggested area, then check it before saving.'}</span></div>}
-    {part?.kind==='tap'&&<select aria-label="Selection type" value={mode} onChange={e=>{setMode(e.target.value);setBox([]);setPoints([]);}}>
-      <option value="point">Click a point</option><option value="box">Box the button and save its picture</option></select>}
+      {suggesting?'Поиск области…':'Предложить область'}</button>
+      <span role="status"><MessageText value={suggestionNote||'Просмотрите предложенную область и проверьте её перед сохранением.'}/></span></div>}
+    {part?.kind==='tap'&&<select aria-label="Тип выделения" value={mode} onChange={e=>{setMode(e.target.value);setBox([]);setPoints([]);}}>
+      <option value="point">Указать точку</option><option value="box">Обвести кнопку и сохранить её изображение</option></select>}
     <canvas ref={canvas} width={capture.width} height={capture.height}
       onPointerDown={e=>{if(!part||part.key==='frame_width'||locked||suggesting)return;e.currentTarget.setPointerCapture(e.pointerId);
         const p=coordinate(e);if(sequence)setPoints([...points,p]);else if(mode==='point')setPoints([p]);else{origin.current=p;setBox([]);}}}
       onPointerMove={e=>{if(!origin.current)return;const [x,y]=coordinate(e),[a,b]=origin.current;
         setBox([Math.min(a,x),Math.min(b,y),Math.abs(x-a),Math.abs(y-b)]);}}
       onPointerUp={()=>{origin.current=null;}} onPointerCancel={()=>{origin.current=null;}}/>
-    {sequence&&<div className="toolbar"><label>Farm tap variation ±{jitter} px per axis<input type="range" min="0" max="40"
+    {sequence&&<div className="toolbar"><label>Разброс нажатий при фарме ±{jitter} пикс. по каждой оси<input type="range" min="0" max="40"
       value={jitter} onChange={e=>setJitter(Number(e.target.value))}/></label>
-      <button onClick={()=>setPoints(points.slice(0,-1))}>Undo</button><button onClick={()=>setPoints([])}>Clear</button><span>{points.length} taps</span></div>}
-    {part?.kind==='grid'&&<div className="toolbar"><label>Columns<input type="number" min="1" max="20" value={cols} onChange={e=>setCols(Number(e.target.value))}/></label>
-      <label>Rows<input type="number" min="1" max="10" value={rows} onChange={e=>setRows(Number(e.target.value))}/></label></div>}
+      <button onClick={()=>setPoints(points.slice(0,-1))}>Отменить последнее</button><button onClick={()=>setPoints([])}>Очистить</button><span>Нажатий: {points.length}</span></div>}
+    {part?.kind==='grid'&&<div className="toolbar"><label>Столбцы<input type="number" min="1" max="20" value={cols} onChange={e=>setCols(Number(e.target.value))}/></label>
+      <label>Строки<input type="number" min="1" max="10" value={rows} onChange={e=>setRows(Number(e.target.value))}/></label></div>}
     {part&&<button className="primary" disabled={locked||suggesting||(part.key!=='frame_width'&&!points.length&&!box.length)}
-      onClick={()=>save(sequence?points:part.key==='frame_width'?[]:mode==='point'?points[0]:box,cols,rows,jitter)}>Save</button>}
+      onClick={()=>save(sequence?points:part.key==='frame_width'?[]:mode==='point'?points[0]:box,cols,rows,jitter)}>Сохранить</button>}
   </section></div>;
 }
 createRoot(document.getElementById('root')!).render(<App/>);

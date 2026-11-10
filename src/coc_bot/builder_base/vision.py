@@ -15,7 +15,7 @@ class BuilderReader(UpgradeReader):
         super().__init__(stop)
         self.templates = {}
 
-    def find(self, frame, name, box=(0, 0, 1, 1), threshold=.88):
+    def find(self, frame, name, box=(0, 0, 1, 1), threshold=.88, brightness=.78):
         if name not in self.templates:
             self.templates[name] = cv2.imread(str(ASSETS / (name+'.png')))
         template = self.templates[name]
@@ -34,15 +34,54 @@ class BuilderReader(UpgradeReader):
                 continue
             _, score, _, point = cv2.minMaxLoc(cv2.matchTemplate(region, ref, cv2.TM_CCOEFF_NORMED))
             observed = region[point[1]:point[1]+rh, point[0]:point[0]+rw]
-            bright = observed.mean() >= ref.mean()*.78
+            bright = observed.mean() >= ref.mean()*brightness
             if bright and score >= threshold and (best is None or score > best[0]):
                 best = (score, (round(w*box[0])+point[0]+rw//2,
                                 round(h*box[1])+point[1]+rh//2))
         return best[1] if best else None
 
     def home(self, frame):
-        return bool(self.find(frame, 'builder_gold', (.94, 0, 1, .09))
-                    and self.find(frame, 'builder_axes', (0, .80, .13, .98)))
+        # Current native Builder captures have a measured 178-per-channel
+        # ceiling. Keep this local tolerance limited to the two independent
+        # village identity anchors; other controls retain default brightness.
+        return bool(self.find(frame, 'builder_gold', (.94, 0, 1, .09), brightness=.66)
+                    and self.find(frame, 'builder_axes', (0, .80, .13, .98), brightness=.66))
+
+    def boat_target(self, frame, *, returning, box=(.14,.12,.90,.80), threshold=.86):
+        """Require the matched boat's striped sail colors before it can be tapped.
+
+        Small Home action buttons can correlate with the tiny boat template.
+        The actual boat has aligned red and white sail bands, so validate those
+        colors in the exact match window. Keep the existing template threshold,
+        search region, and coordinates unchanged.
+        """
+        name='boat_return' if returning else 'boat'
+        # The boat is rendered over dark water and can average well below the
+        # same template's brightness; color identity below gates the candidate.
+        point=self.find(frame,name,box,threshold=threshold,brightness=.65)
+        if point is None:return None
+        template=self.templates.get(name)
+        if template is None:return None
+        h,w=frame.shape[:2]
+        width=max(1,round(template.shape[1]*w/1853))
+        height=max(1,round(template.shape[0]*w/1853))
+        x,y=point
+        x0=x-width//2;y0=y-height//2
+        x1=x0+width;y1=y0+height
+        if x0<0 or y0<0 or x1>w or y1>h:return None
+        observed=cv2.resize(frame[y0:y1,x0:x1],(template.shape[1],template.shape[0]))
+        to_hsv=cv2.cvtColor(template,cv2.COLOR_BGR2HSV)
+        observed_hsv=cv2.cvtColor(observed,cv2.COLOR_BGR2HSV)
+        red=lambda hsv: ((cv2.inRange(hsv,(0,90,70),(12,255,255))
+                          | cv2.inRange(hsv,(168,90,70),(180,255,255)))>0)
+        white=lambda hsv: (cv2.inRange(hsv,(0,0,150),(180,70,255))>0)
+        expected_red=red(to_hsv);expected_white=white(to_hsv)
+        observed_red=red(observed_hsv);observed_white=white(observed_hsv)
+        if (expected_red.sum()<8 or expected_white.sum()<8
+                or observed_red[expected_red].mean()<.50
+                or observed_white[expected_white].mean()<.50):
+            return None
+        return point
 
     def daily_reward_close(self, frame):
         """Only close the inspected daily calendar; never select its rewards."""
@@ -123,21 +162,44 @@ class BuilderReader(UpgradeReader):
                          or self.find(frame, 'battle_ends', (.43, .012, .57, .055))))
 
     def attack_menu(self, frame):
-        return bool(self.find(frame, 'start_attack', (.38, .14, .66, .24))
-                    and self.find(frame, 'find_now', (.65, .60, .84, .72)))
+        # The inspected 1920x1080 Builder menu scales its title differently
+        # from older captures; keep the low title threshold gated by the bright
+        # Find Now button at a high threshold in its fixed, separate region.
+        return bool(self.find(frame, 'start_attack', (.38, .14, .66, .24), threshold=.82, brightness=.65)
+                    and self.find(frame, 'find_now', (.65, .60, .84, .72), threshold=.93, brightness=.65))
 
     def supported_army(self, frame):
-        """First release accepts the inspected six-camp Night Witch army only."""
-        return (self.attack_menu(frame)
-                and bool(self.find(frame, 'menu_machine', (.17,.39,.224,.48)))
-                and all(self.find(frame, 'menu_witch', (x,.39,x+.055,.48))
-                        for x in (.227,.286,.345,.404,.463,.522)))
+        return self.supported_army_kind(frame) is not None
+
+    def supported_army_kind(self, frame):
+        """Accept only the inspected Night Witch or four single Baby Dragon camps."""
+        if (not self.attack_menu(frame)
+            or not self.find(frame, 'menu_machine', (.17,.39,.224,.48),brightness=.65)):
+            return None
+        if all(self.find(frame, 'menu_witch', (x,.39,x+.055,.48))
+               for x in (.227,.286,.345,.404,.463,.522)):
+            return 'night_witch'
+        boxes=((.227,.39,.284,.49),(.283,.39,.340,.49),
+               (.339,.39,.396,.49),(.395,.39,.461,.49))
+        singles=((.227,.38,.248,.42),(.283,.38,.304,.42),
+                 (.339,.38,.360,.42),(.395,.38,.416,.42))
+        if (all(self.find(frame,'menu_baby_dragon',box,threshold=.96) for box in boxes)
+            and all(self.find(frame,'menu_baby_dragon_one',box,threshold=.94) for box in singles)
+            and not self.find(frame,'menu_baby_dragon',(.451,.39,.508,.49),threshold=.96)):
+            return 'baby_dragon'
+        return None
+
+    def battle_army_ready(self, army):
+        """Require verified troop art; abilities remain independently gated by live readiness."""
+        if army=='night_witch':
+            return True
+        if army!='baby_dragon':
+            return False
+        return (ASSETS/'baby_dragon.png').is_file()
 
     def reward_button(self, frame):
-        if (self.find(frame, 'star_bonus', (.38,.16,.62,.25))
-                and self.find(frame, 'bonus_received', (.37,.50,.63,.60))):
-            return self.find(frame, 'bonus_okay', (.42,.72,.58,.84))
-        return None
+        from coc_bot.vision.notices import home_star_bonus_button
+        return home_star_bonus_button(frame)
 
     def menu_kind(self, frame):
         # The square Builder Gold icon distinguishes this from the identical
@@ -161,7 +223,10 @@ class BuilderReader(UpgradeReader):
         if box is None:
             return None
         from coc_bot.upgrades.vision import text
-        raw = read_digits(crop(frame, box), fraction=True) or text(crop(frame, box), fraction=True, stop=self.stop)
+        from coc_bot.progression.reader import counter_digit_variants
+        raw = (read_digits(crop(frame, box), fraction=True)
+               or read_digits(crop(frame, box), fraction=True,extra_templates=counter_digit_variants())
+               or text(crop(frame, box), fraction=True, stop=self.stop))
         match = re.fullmatch(r'([0-3])/([123])' if kind == 'buildings' else r'([01])/(1)', raw)
         if not match:
             return None
@@ -174,43 +239,108 @@ class BuilderReader(UpgradeReader):
             'elixir': (.56, .104, .679, .143),
         }.items()}
 
+    def storage_tooltip_anchors(self, frame, resource):
+        Y = {'gold':.055,'elixir':.12,'dark_elixir':.19}
+        if resource not in Y:return None
+        top = Y[resource]+.03
+        # Max labels for adjacent resources are only ~70px apart. A broad
+        # search can mistake an already-open elixir tooltip for gold.
+        box = (.68, top, .99, top+.075)
+        for max_name,production_name in (('storage_max','storage_production'),
+                                         ('home_storage_max','home_storage_production')):
+            maximum=self.find(frame,max_name,box,threshold=.95)
+            production=self.find(frame,production_name,(.68,top+.02,.99,top+.13),threshold=.94)
+            if maximum is not None and production is not None:return maximum,production
+        maximum=self._storage_lettering(frame,'builder_storage_max_native',box)
+        production=self._storage_lettering(frame,'builder_storage_production_native',(.68,top+.02,.99,top+.13))
+        if maximum is not None and production is not None:return maximum,production
+        # The tooltip is translucent: village details behind the lettering
+        # change every time the map moves. Match the white lettering only,
+        # retaining two separate labels and a narrow resource-specific row.
+        maximum=self._storage_lettering(frame,'home_storage_max',box)
+        production=self._storage_lettering(frame,'home_storage_production',(.68,top+.02,.99,top+.13))
+        return (maximum,production) if maximum is not None and production is not None else None
+
+    def _storage_lettering(self, frame, name, box):
+        template=self.templates.get(name)
+        if template is None:
+            template=cv2.imread(str(ASSETS/(name+'.png')))
+            self.templates[name]=template
+        if template is None:return None
+        h,w=frame.shape[:2]
+        if not 1.6<w/h<1.95:return None
+        if name.endswith('_native'):
+            # Match lettering at the inspected native resolution. Scaling a
+            # binary glyph twice loses its thin strokes near the white cutoff.
+            image=cv2.resize(frame,(1920,1080))
+            clean=lambda a:cv2.inRange(cv2.cvtColor(a,cv2.COLOR_BGR2HSV),(0,0,200),(180,70,255))
+            region=clean(crop(image,box));ref=clean(template)
+            if any(a<b for a,b in zip(region.shape,ref.shape)):return None
+            _,score,_,point=cv2.minMaxLoc(cv2.matchTemplate(region,ref,cv2.TM_CCOEFF_NORMED))
+            if score<.96:return None
+            return (round((round(1920*box[0])+point[0]+ref.shape[1]/2)*w/1920),
+                    round((round(1080*box[1])+point[1]+ref.shape[0]/2)*h/1080))
+        mask=lambda a:cv2.inRange(cv2.cvtColor(a,cv2.COLOR_BGR2HSV),(0,0,200),(180,70,255))
+        region=mask(crop(frame,box));best=None
+        for factor in (.96,1,1.04):
+            scale=w/1853*factor
+            ref=mask(cv2.resize(template,None,fx=scale,fy=scale))
+            rh,rw=ref.shape
+            if region.shape[0]<rh or region.shape[1]<rw:continue
+            _,score,_,point=cv2.minMaxLoc(cv2.matchTemplate(region,ref,cv2.TM_CCOEFF_NORMED))
+            if score >= (.96 if name.endswith('_native') else .90 if name.endswith('_max') else .85) and (best is None or score>best[0]):
+                best=(score,(round(w*box[0])+point[0]+rw//2,round(h*box[1])+point[1]+rh//2))
+        return best[1] if best else None
+
     def storage_capacity(self, frame, resource):
         """Read the game's Max tooltip, with its resource-specific vertical position."""
         if resource not in ('gold','elixir') or not self.home(frame):return None
-        box=(.75,.085,.99,.19) if resource=='gold' else (.75,.15,.99,.265)
-        maximum=self.find(frame,'storage_max',box,threshold=.96)
-        production=self.find(frame,'storage_production',(.75,box[1],.99,box[3]+.06),threshold=.94)
-        if maximum is None or production is None:return None
-        scale=frame.shape[1]/1853;x,y=maximum
-        area=frame[round(y-19*scale):round(y+20*scale),round(x+32*scale):round(x+161*scale)]
-        value=resource_amount(area,self.stop)
+        anchors=self.storage_tooltip_anchors(frame,resource)
+        if anchors is None:return None
+        scale=frame.shape[1]/1853;x,y=anchors[0]
+        area=frame[round(y-19*scale):round(y+20*scale),round(x+32*scale):round(frame.shape[1]*.978)]
+        from coc_bot.progression.reader import balance_amount
+        value=balance_amount(area,self.stop)
         return value if type(value) is int and 0<value<=20_000_000 else None
 
-    def storage_capacities(self, runner):
-        result={}
-        for resource,y in (('gold',.055),('elixir',.12)):
-            frame=runner.frame()
-            if not self.home(frame):return result
-            if self.storage_capacity(frame,resource) is None:
-                for other,oy in (('gold',.055),('elixir',.12)):
-                    if self.storage_capacity(frame,other) is not None:
-                        runner.tap((round(frame.shape[1]*.87),round(frame.shape[0]*oy)))
-                        runner.wait(.25);frame=runner.frame()
-                # The balance toggles its tooltip. Never tap a resource icon or
-                # purchase '+', and never toggle off an already-open target.
-                runner.tap((round(frame.shape[1]*.87),round(frame.shape[0]*y)))
-                runner.wait(.25)
-            first=self.storage_capacity(runner.frame(),resource)
-            second=self.storage_capacity(runner.frame(),resource)
-            if first is not None and first==second:result[resource]=first
-        frame=runner.frame()
-        if self.home(frame):
-            for resource,y in (('gold',.055),('elixir',.12)):
-                if self.storage_capacity(frame,resource) is not None:
-                    runner.tap((round(frame.shape[1]*.87),round(frame.shape[0]*y)))
-        return result
+    def storage_tooltip_visible(self, frame, resource):
+        return self.home(frame) and self.storage_tooltip_anchors(frame,resource) is not None
 
-    def detail_close(self, frame):
+    def storage_capacities(self, runner):
+        from loguru import logger
+        result={};rows={'gold':.055,'elixir':.12}
+        def close_known(frame):
+            for other,oy in rows.items():
+                if self.storage_tooltip_visible(frame,other):
+                    runner.tap((round(frame.shape[1]*.87),round(frame.shape[0]*oy)))
+                    runner.wait(.25)
+                    return runner.frame()
+            return frame
+        try:
+            for resource,y in rows.items():
+                logger.info('Проверяю хранилище {} в деревне строителя', 'золота' if resource=='gold' else 'эликсира')
+                frame=runner.frame()
+                if not self.home(frame):return result
+                if not self.storage_tooltip_visible(frame,resource):
+                    frame=close_known(frame)
+                    runner.tap((round(frame.shape[1]*.87),round(frame.shape[0]*y)))
+                    runner.wait(.25)
+                frame=runner.frame()
+                if not self.storage_tooltip_visible(frame,resource):return result
+                first=self.storage_capacity(frame,resource)
+                second=self.storage_capacity(runner.frame(),resource)
+                if first is not None and first==second:
+                    result[resource]=first
+                    logger.info('Вместимость хранилища {} подтверждена: {}', 'золота' if resource=='gold' else 'эликсира',f'{first:,}'.replace(',',' '))
+                frame=close_known(runner.frame())
+                if self.storage_tooltip_visible(frame,resource):return result
+            return result
+        finally:
+            if not (runner.stop and runner.stop()):close_known(runner.frame())
+
+    def detail_close(self, frame, candidate=None):
+        # Match UpgradeReader's shared transaction interface. Builder dialogs
+        # have their own independently verified title and close landmarks.
         # The running research modal has a wider title and its X sits farther
         # left than the confirmation panel. Require both native landmarks.
         if self.find(frame, 'research_units_native_title', (.38, .03, .64, .11), threshold=.97):
@@ -220,7 +350,9 @@ class BuilderReader(UpgradeReader):
         title = compact(self.label(frame, (.30, .035, .72, .09)))
         # The native outlined 5 can read as S. This correction locates only
         # the non-spending close control; independent payment checks remain.
-        if title in ('upgradetolevels','upgrradetolevels') and self.find(frame,'upgrade_benefits',(.48,.12,.81,.18),threshold=.97):
+        if title in ('upgradetolevels','upgrradetolevels') and (
+            self.find(frame,'upgrade_benefits',(.48,.12,.81,.18),threshold=.97)
+            or self.find(frame,'upgrade_level_five_heading',(.30,.025,.65,.11),threshold=.97)):
             title = 'upgradetolevel'
         if title not in ('upgradetolevel','upgradeunits'):
             return None
@@ -236,9 +368,20 @@ class BuilderReader(UpgradeReader):
             return None
         if compact(candidate.name) in ('nightwitch','sneakyarcher','ragedbarbarian'):
             return self.research_confirmation(frame,candidate)
-        named=compact(self.white_text(crop(frame, (.17, .14, .41, .19)))) == compact(candidate.name)
+        observed_name=compact(self.white_text(crop(frame, (.17, .14, .41, .19))))
+        # The outlined native Star Laboratory heading is consistently read as
+        # "Star LaboRa LORY" on its level-up dialog. Correct only that complete
+        # observed title; price, resource, green control, and close remain
+        # independently verified below and in detail_close.
+        if observed_name in ('starlaboralory','starlabooraory'):
+            observed_name='starlaboratory'
+        named=observed_name==compact(candidate.name)
         if not named and compact(candidate.name)=='starlaboratory':
             named=self.find(frame,'upgrade_star_laboratory_title',(.17,.14,.41,.19),threshold=.97) is not None
+        if not named and compact(candidate.name)=='builderbarracks':
+            named=self.find(frame,'upgrade_builder_barracks_title',(.17,.14,.41,.19),threshold=.97) is not None
+        if not named and compact(candidate.name)=='elixircollector':
+            named=self.find(frame,'upgrade_elixir_collector_title',(.17,.14,.41,.19),threshold=.97) is not None
         if not named:
             return None
         # Builder building dialog has a single resource button, no Confirm text.
@@ -310,6 +453,9 @@ class BuilderReader(UpgradeReader):
         if compact(candidate.name)=='nightwitch':
             heading=compact(self.label(frame,(.30,.035,.72,.09)))
             unit=compact(self.label(frame,(.335,.18,.60,.23)))
+            # This observed timer font can read "levels" as "cevels". Correct
+            # only that exact native OCR error after the troop's full name.
+            unit=unit.replace('nightwitchcevels','nightwitchlevels')
             return bool(self.detail_close(frame) and heading=='upgradeunits'
                         and unit.startswith(compact(candidate.name)+'level'))
         return super().running_detail(frame,candidate)
@@ -347,31 +493,49 @@ class BuilderReader(UpgradeReader):
             result.sort(key=lambda c:order.get(compact(c.name),3))
         return result, False
 
-    def cards(self, frame):
-        """Only inspected single-unit Night Witch and Battle Machine cards.
+    def cards(self, frame, army='night_witch'):
+        """Read cards for the army already verified in the attack menu.
 
-        Match artwork, never a slot number. Unknown troops remain untouched.
-        Green health strips distinguish deployed units from ready units.
+        Baby Dragon cards are recognized from their own live artwork. A menu
+        receipt cannot identify a battle card after stage transitions.
         """
-        if not self.battle(frame):
+        if army not in ('night_witch','baby_dragon') or not self.battle(frame):
+            return []
+        if army=='baby_dragon' and not (ASSETS/'baby_dragon.png').is_file():
             return []
         h, w = frame.shape[:2]
         result = []
         for index, cx in enumerate((.10, .189, .268, .347, .426, .505, .584, .663, .742, .821)):
             box = (cx-.036, .80, cx+.036, .99)
-            unit = 'battle_machine' if index == 0 else 'night_witch'
+            unit = ('battle_machine' if index == 0 else
+                    'baby_dragon' if army=='baby_dragon' else 'night_witch')
             if index == 0 and self.find(frame, 'battle_copter', box, threshold=.86):
                 unit = 'battle_copter'
             variants = [unit] + (['night_witch_active', 'night_witch_survivor'] if unit == 'night_witch'
                                 else ['battle_machine_active'] if unit == 'battle_machine' else [])
-            if not any(self.find(frame, name, box, threshold=.86) for name in variants):
+            found = any(self.find(frame, name, box, threshold=.86) for name in variants)
+            # Deployed Baby Dragon cards rise and show a bright green health
+            # strip. Their face art changes slightly in that state, lowering
+            # the inspected head-only template score from ~.99 to ~.78. Keep
+            # the relaxed face threshold behind both independent live UI cues;
+            # it cannot relabel an empty, spent-gray, or different troop slot.
+            deployed_card = False
+            if unit == 'baby_dragon':
+                band = cv2.cvtColor(crop(frame, (cx-.01, .796, cx+.025, .822)), cv2.COLOR_BGR2HSV)
+                health = cv2.cvtColor(crop(frame, (cx-.025, .831, cx+.025, .858)), cv2.COLOR_BGR2HSV)
+                blue_band = cv2.inRange(band, (90, 100, 180), (170, 255, 255)).mean()/255
+                green_health = cv2.inRange(health, (10, 120, 160), (85, 255, 255)).mean()/255
+                deployed_card = blue_band > .90 and green_health > .55
+                if not found and deployed_card:
+                    found = self.find(frame, unit, box, threshold=.75) is not None
+            if not found:
                 continue
             # Raised cards (number band at y=.79) are deployed. Health can be
             # green, yellow or red; second-stage survivors have health while
             # still waiting to deploy, so color alone is insufficient.
             band = crop(frame, (cx-.01, .796, cx+.025, .822))
             hsv = cv2.cvtColor(band, cv2.COLOR_BGR2HSV)
-            deployed = cv2.inRange(hsv, (90, 100, 180), (170, 255, 255)).mean()/255 > .6
+            deployed = deployed_card or cv2.inRange(hsv, (90, 100, 180), (170, 255, 255)).mean()/255 > .6
             health = cv2.cvtColor(crop(frame, (cx-.025, .831, cx+.025, .858)), cv2.COLOR_BGR2HSV)
             deployed |= cv2.inRange(health, (10, 120, 160), (85, 255, 255)).mean()/255 > .12
             if index == 0:
@@ -381,7 +545,9 @@ class BuilderReader(UpgradeReader):
             if (art[:, :, 1] > 60).mean() < .15:
                 continue
             result.append({'slot': index, 'unit': unit, 'point': (round(w*cx), round(h*.90)),
-                           'deployed': bool(deployed)})
+                           'deployed': bool(deployed),
+                           'ability_ready': bool(unit=='baby_dragon' and
+                               self.find(frame,'baby_dragon_ability_ready',box,threshold=.96))})
         return result
 
     def result_button(self, frame):

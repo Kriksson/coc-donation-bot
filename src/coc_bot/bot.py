@@ -118,6 +118,12 @@ class DonationBot:
         self.farmer.attack_nav.stop_check = stop
         self.farmer.deployer.stop_check = stop
         self.executor.stop_check = stop
+        from coc_bot.runtime.watchdog import ProgressWatchdog, RecoveryBudget
+        self.progress_watchdog = ProgressWatchdog(self.config, stop)
+        self.recovery_budget = RecoveryBudget(self.config)
+        self.capture.frame_observer = self.progress_watchdog.observe
+        self.nav_input.action_listener = self.progress_watchdog.action
+        self.donation_input.action_listener = self.progress_watchdog.action
 
     def set_mode(self, mode: BotMode) -> None:
         """Switch flow context so classify() only considers relevant screens."""
@@ -302,6 +308,7 @@ class DonationBot:
             self._set_state("scan_chat")
             self._last_anti_idle = time.monotonic()
 
+            from coc_bot.runtime.watchdog import RecoveryLimit
             handed_off=False
             while not self._stop_requested:
                 if self._settings_stop_ready():
@@ -321,13 +328,28 @@ class DonationBot:
                 except AdbError as exc:
                     if self._stop_requested:
                         break
-                    logger.error("ADB error: {} — reconnecting...", exc)
+                    attempt = self.recovery_budget.reserve('adb')
+                    logger.warning('ADB недоступен — переподключаюсь, попытка {}/2: {}', attempt, exc)
                     if interrupted_sleep(3, self.should_stop):
                         break
                     try:
                         self.client.ensure_connected()
                     except AdbStopped:
                         break
+                    except AdbError as reconnect_error:
+                        logger.warning('Переподключение ADB не удалось: {}', reconnect_error)
+                except (AttributeError, TypeError, NameError, ImportError) as exc:
+                    # Navigation cannot repair a code/interface error. Preserve
+                    # its actual cause instead of spending recovery attempts.
+                    from coc_bot.adb.capture_coordinator import latest_frame
+                    from coc_bot.runtime.verification import save_frame, record_failure
+                    snapshot = latest_frame(self.config.adb_device)
+                    evidence = save_frame(self.config, 'program-error', snapshot[0]) if snapshot else None
+                    message = f'Ошибка программы: {exc}. Бот остановлен без повторного восстановления'
+                    record_failure(self.config, 'runtime.program', message, evidence=evidence)
+                    raise RuntimeError(message) from exc
+                except RecoveryLimit:
+                    raise
                 except ActionNeedsReview:
                     # Preserve the receipt and surface the error to the web
                     # controller. Repeated recovery/navigation is not progress.
@@ -445,8 +467,27 @@ class DonationBot:
             urgent=(name=='upgrades' and upgrade_pending or name=='layouts' and
                     (layout.get('pending') or layout.get('last_survey',{}).get('payment')))
             deferred=visit.deferred(name) if visit and not urgent and not (name=='farm' and paced_farm_due) else None
+            maintenance_state=(visit.load() if visit and name=='upgrades' else {})
+            if not isinstance(maintenance_state,dict):maintenance_state={}
+            legacy_remaining=[]
+            if (maintenance_state.get('maintenance_checked')
+                    and 'maintenance_complete' not in maintenance_state):
+                saved_maintenance=read(self.config.data_dir/'upgrades/maintenance.json',{})
+                if saved_maintenance.get('visit')==maintenance_state.get('started_at'):
+                    legacy_remaining=saved_maintenance.get('remaining',[])
+            maintenance_already_checked = bool(
+                visit and name == 'upgrades' and not urgent
+                and maintenance_state.get('maintenance_checked')
+                and maintenance_state.get('maintenance_complete', not legacy_remaining)
+            )
             if deferred:
                 self._visit_reason=deferred.get('reason');self._visit_retry_at=deferred['retry_at']
+                attempted=False
+            elif maintenance_already_checked:
+                # The early idle-builder check at step 0 already covered this
+                # visit. Advance the ordinary checklist entry without paying
+                # for a second resource scan minutes later.
+                self._visit_reason='maintenance already checked this visit'
                 attempted=False
             else:
                 if visit and name=='upgrades':self._next_upgrade_check=0
@@ -703,6 +744,21 @@ class DonationBot:
         from coc_bot.progression.resources import HomeResources
         return HomeResources(self.navigator).observe(self.config)
 
+    def _refresh_interval_balances(self):
+        """Update the dashboard without making storage OCR an attack gate."""
+        from coc_bot.progression.resources import HomeResources
+        from coc_bot.adb.client import AdbError,AdbStopped
+        try:
+            observation=HomeResources(self.navigator).observe(self.config)
+            if observation.get('balances'):
+                state=self._resource_state()
+                state.update(observation=observation,observed_at=time.time(),status='interval',message=None)
+                self._save_resource_state(state)
+        except AdbStopped:
+            raise
+        except (ValueError,OSError,AdbError) as error:
+            logger.warning('Dashboard resource balances unavailable: {}',error)
+
     def _resource_farm_due(self):
         from coc_bot.runtime.resource_farming import decide
         state=self._resource_state()
@@ -740,6 +796,16 @@ class DonationBot:
         paced_due = getattr(self, '_fleet_farm_due', None)
         if paced_due is not None:
             return paced_due()
+        trigger=getattr(self.config,'farm_trigger_mode','resources')
+        if trigger=='interval':
+            due=self.tracker.farm_interval_due(self.config.farm_interval_seconds)
+            if due is None:
+                self._visit_reason='Farm interval timestamp is invalid; automatic attack paused'
+                self._visit_retry_at=time.time()+300
+                return False
+            return due
+        if trigger!='resources':
+            raise ValueError('Unsupported farm trigger mode: '+str(trigger))
         return self._resource_farm_due()
 
     def _check_chat_between_attacks(self):
@@ -781,6 +847,9 @@ class DonationBot:
             return True
         if not manual and not self.config.farm_enabled:
             return False
+
+        if getattr(self.config,'farm_trigger_mode','resources')=='interval':
+            self._refresh_interval_balances()
 
         # Automatic progression checks the Castle inside its already open
         # army editor. Other engines still need a separate check before play.
@@ -843,7 +912,8 @@ class DonationBot:
         self.game_state.transition(GameState.CLAN_CHAT if getattr(self.config,'donation_enabled',True) else GameState.HOME, reason="farm done")
         self._set_state("scan_chat")
         self._last_anti_idle = time.monotonic()
-        if not manual and not self._stop_requested and pace is None:
+        if (not manual and not self._stop_requested and pace is None
+                and getattr(self.config,'farm_trigger_mode','resources')=='resources'):
             state=self._resource_state()
             if result.success:
                 from coc_bot.runtime.resource_farming import record_outcome,decide
@@ -1113,7 +1183,22 @@ class DonationBot:
         self._set_state("scan_chat")
 
     def _recover(self) -> None:
-        """Desync recovery: full screen scan first, then BACK only if safe, then reopen clan chat."""
+        if self.should_stop():return
+        from contextlib import nullcontext
+        from coc_bot.runtime.watchdog import RecoveryBudget
+        budget = getattr(self, 'recovery_budget', None) or RecoveryBudget(self.config)
+        attempt = budget.reserve(getattr(self, '_state', 'unknown'))
+        monitor = getattr(self, 'progress_watchdog', None)
+        if monitor:monitor.status = f'Восстанавливаю игру — попытка {attempt}/2'
+        logger.warning('Восстанавливаю игру — попытка {}/2 за 15 минут', attempt)
+        try:
+            with monitor.recovery() if monitor else nullcontext():
+                self._recover_once()
+        finally:
+            if monitor:monitor.status = None
+
+    def _recover_once(self) -> None:
+        """Recover receipts and known notices before requiring a verified village."""
         logger.info("Running recovery sequence (full classify)")
         from coc_bot.vision import recorder
 
@@ -1157,6 +1242,12 @@ class DonationBot:
             return
         self.set_mode(BotMode.ANY)
         frame = self.capture.screenshot()
+        from coc_bot.progression.home import recover_home_overlay
+        for _ in range(4):
+            if self.should_stop():return
+            if not recover_home_overlay(self.navigator, frame):break
+            if interrupted_sleep(.5, self.should_stop):return
+            frame = self.capture.screenshot()
         screen = self.navigator.classify(frame, mode=BotMode.ANY)
         self.last_screen = screen.value
         logger.info("Recovery saw screen={}", screen.value)
@@ -1180,10 +1271,9 @@ class DonationBot:
             if self.navigator._dismiss_popup(frame) is False:
                 return
         elif screen not in (ScreenType.HOME, ScreenType.CLAN_CHAT, ScreenType.LOADING):
-            # Unknown overlay/popup — BACK is the generic dismiss.
-            self.nav_input.back()
-            if interrupted_sleep(0.5, self.should_stop):
-                return
+            from coc_bot.runtime.verification import save_frame
+            save_frame(self.config, 'watchdog-unknown', frame)
+            raise RuntimeError('Неизвестное окно блокирует восстановление; снимок watchdog-unknown сохранён')
         if self._stop_requested:
             return
         self.set_mode(BotMode.DONATE)
@@ -1191,7 +1281,7 @@ class DonationBot:
         if chat_ready:
             self.game_state.transition(GameState.CLAN_CHAT, reason="recovery done")
         else:
-            logger.warning("Recovery has not confirmed clan chat")
+            raise RuntimeError("Восстановление не подтвердило деревню; бот остановлен")
         self._set_state("scan_chat")
         # Recovery always restarts the watchdog clock, even if we were already in scan_chat.
         self._state_entered = time.monotonic()
@@ -1200,6 +1290,11 @@ class DonationBot:
     def _check_watchdog(self) -> None:
         # Farm battles routinely exceed state_watchdog_seconds.
         if self._state == "farm":
+            return
+        # Passive waiting on a recognized village/chat is normal. Unknown
+        # frames still have the existing streak limit and state timeout.
+        if (self._state in ('scan_chat', 'scroll_chat') and self._unknown_streak == 0
+                and self.last_screen in ('home', 'clan_chat')):
             return
         elapsed = time.monotonic() - self._state_entered
         if elapsed > self.config.state_watchdog_seconds:

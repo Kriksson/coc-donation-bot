@@ -85,7 +85,10 @@ def read_short_label(roi_bgr: np.ndarray, *, timeout_seconds=2.0, stop_check=Non
                 cv2.imwrite(str(path), img)
                 for psm in ("7", "8"):
                     remaining = deadline - time.monotonic()
-                    if remaining <= .05:
+                    # A final tiny remainder mostly pays Tesseract startup and
+                    # repeatedly times out. Keep the overall deadline, but do
+                    # not start another variant without a useful time slice.
+                    if remaining < .35:
                         return remember(texts[0] if texts else None)
                     proc = run_process(
                         [
@@ -109,12 +112,19 @@ def read_short_label(roi_bgr: np.ndarray, *, timeout_seconds=2.0, stop_check=Non
                         texts.append(compact)
                         if any(word in compact for word in ("donat", "trade", "findamatch", "findmatch", "multiplayer", "build", "myarmy", "cookbook", "attack", "endbattle", "next", "elixir", "continue", "capitalgold", "raidmedals")):
                             return remember(compact)
-    except (OSError, subprocess.TimeoutExpired, ProcessStopped) as exc:
-        logger.debug("Button label OCR failed: {}", exc)
+    except subprocess.TimeoutExpired:
+        # Earlier variants may already have produced a valid label. Preserve
+        # the same result as normal budget exhaustion, and cache unreadable
+        # crops too so an identical frame cannot restart the full OCR loop.
+        return remember(texts[0] if texts else None)
+    except ProcessStopped:
         return None
+    except OSError as exc:
+        logger.debug("Button label OCR failed: {}", exc)
+        return remember(None)
 
     if not texts:
-        return None
+        return remember(None)
     # Prefer a read that looks like a known chat button.
     for t in texts:
         if "donat" in t or "trade" in t:

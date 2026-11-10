@@ -5,6 +5,7 @@ import re
 import tempfile
 import csv
 import io
+import unicodedata
 from functools import lru_cache
 
 import cv2
@@ -13,9 +14,10 @@ import numpy as np
 from coc_bot.runtime.processes import run_process
 
 
-@lru_cache(maxsize=2)
-def _goblin_counter(kind):
-    name='goblin-research-counter.png' if kind=='research' else 'goblin-counter.png'
+@lru_cache(maxsize=3)
+def _goblin_counter(kind, native=False):
+    name=('goblin-research-counter-native.png' if native else
+          'goblin-research-counter.png' if kind=='research' else 'goblin-counter.png')
     return cv2.imread(str(Path(__file__).with_name('assets')/name))
 
 
@@ -32,7 +34,7 @@ PET_NAMES = {compact(name): name for name in (
 def _pet_ocr(value):
     # The game's dotted L.A.S.S.I title has S/5 and I/1/bracket ambiguities.
     # Correct only the complete known name, never prices or arbitrary words.
-    return re.sub(r'(?i)\bl[. :\-]*a[. :\-]*[s5][. :\-]*[s5][. :\-]*[i1l|!\]]','LASSI',value)
+    return re.sub(r'(?i)\bl[. :\-]*a[. :\-]*[s5]\$?[. :\-]*[s5][. :\-]*[i1l|!\]]','LASSI',value)
 
 
 def pet_name(value):
@@ -41,6 +43,7 @@ def pet_name(value):
 
 
 def upgrade_heading(value, candidate):
+    value=unicodedata.normalize('NFKD', value)
     if compact(candidate.name)=='lassi':
         value=_pet_ocr(value)
     if compact(candidate.name) in ('barracks','darkbarracks'):
@@ -60,7 +63,7 @@ def crop(frame, box):
     return frame[round(b*h):round(d*h), round(a*w):round(c*w)]
 
 
-def text(image, *, digits=False, fraction=False, stop=None):
+def text(image, *, digits=False, fraction=False, stop=None, psm=7):
     if image is None or not image.size:
         return ""
     if stop and stop():
@@ -75,7 +78,7 @@ def text(image, *, digits=False, fraction=False, stop=None):
     with tempfile.TemporaryDirectory() as folder:
         path = Path(folder)/"label.png"
         cv2.imwrite(str(path), gray)
-        command = ["tesseract", str(path), "stdout", "--psm", "7", "-l", "eng"]
+        command = ["tesseract", str(path), "stdout", "--psm", str(psm), "-l", "eng"]
         if digits or fraction:
             command += ["-c", "tessedit_char_whitelist=0123456789" + ("/" if fraction else "")]
         result = run_process(command, text=True, timeout=4, stop_check=stop)
@@ -184,25 +187,60 @@ class UpgradeReader:
             return "buildings"
         return None
 
-    def detail_close(self, frame):
+    def upgrade_title(self, frame, candidate=None):
+        title=self.label(frame,(.26,.035,.73,.095))
+        normalized=upgrade_heading(title,candidate) if candidate is not None else compact(title)
+        prefixes=(('upgrade'+compact(candidate.name)+'toleve','upgrading'+compact(candidate.name)+'toleve')
+                  if candidate is not None else ('upgrade','upgrading'))
+        if normalized.startswith(prefixes) and 'toleve' in normalized:return title
+        # Long names extend beyond the compact title region. Keep the original
+        # crop for short names, where unrelated header controls can spoil OCR.
+        return self.label(frame,(.14,.035,.85,.095))
+
+    def detail_close(self, frame, candidate=None):
+        capped_home = False
+        if candidate is not None:
+            from coc_bot.vision.capped_frames import has_exact_cap_178
+            if has_exact_cap_178(frame):
+                heading = self.upgrade_title(frame,candidate)
+                normalized = upgrade_heading(heading, candidate)
+                prefix = 'upgrade' + compact(candidate.name) + 'tolevel'
+                raw_title = re.sub(r'[^a-z0-9]', '',
+                                   unicodedata.normalize('NFKD', heading).lower())
+                if compact(candidate.name) == 'lassi':
+                    raw_title = re.sub(r'[^a-z0-9]', '', _pet_ocr(raw_title).lower())
+                if compact(candidate.name) in ('barracks', 'darkbarracks'):
+                    raw_title = re.sub(r'bar{3}acks', 'barracks', raw_title)
+                if compact(candidate.name) == 'clancastle':
+                    raw_title = raw_title.replace('clancastile', 'clancastle')
+                if (not normalized.startswith(prefix)
+                        or not raw_title.startswith(prefix)
+                        or re.fullmatch(r'\d{1,3}', raw_title[len(prefix):]) is None):
+                    return None
+                capped_home = True
         close=crop(frame,(.865,.04,.907,.113))
         hsv=cv2.cvtColor(close,cv2.COLOR_BGR2HSV)
         red=cv2.bitwise_or(cv2.inRange(hsv,(0,100,100),(10,255,255)),
                            cv2.inRange(hsv,(170,100,100),(180,255,255)))
-        white=cv2.inRange(hsv,(0,0,200),(180,65,255))
+        if capped_home:
+            x_mark=crop(frame,(.875,.052,.900,.096))
+            x_hsv=cv2.cvtColor(x_mark,cv2.COLOR_BGR2HSV)
+            white=cv2.inRange(x_hsv,(0,0,160),(180,75,178))
+        else:
+            white=cv2.inRange(hsv,(0,0,200),(180,65,255))
         if red.mean()/255 < .20 or white.mean()/255 < .08:
             return None
-        label=re.sub(r'^up+(?=grad)','up',compact(self.label(frame,(.26,.035,.73,.095))))
+        label=re.sub(r'^up+(?=grad)','up',compact(self.upgrade_title(frame,candidate)))
         if not label.startswith(('upgrade','upgrading')) or 'toleve' not in label:
             return None
         h,w=frame.shape[:2]
         return round(w*.886),round(h*.075)
 
     def running_detail(self, frame, candidate):
-        heading=compact(self.label(frame,(.26,.035,.73,.095)))
+        heading=compact(self.upgrade_title(frame,candidate))
         timer=compact(self.label(frame,(.79,.82,.895,.865)))
         return (upgrade_heading(heading,candidate).startswith('upgrading'+compact(candidate.name)+'toleve')
-                and timer=='timeleft' and self.detail_close(frame) is not None)
+                and timer=='timeleft' and self.detail_close(frame,candidate) is not None)
 
     def availability(self, frame, kind):
         from coc_bot.upgrades.digits import read_digits
@@ -222,15 +260,20 @@ class UpgradeReader:
             # The Goblin event adds a gem-only worker to the displayed fraction
             # when regular workers are busy. Never count it as a free builder
             # or research slot, including when reconciling a real upgrade.
-            canvas=cv2.resize(frame,(1853,1048));reference=_goblin_counter(kind)
             bounds=(.735,.895,.79,.947) if kind=='buildings' else (.802,.895,.86,.947)
-            region=crop(canvas,bounds)
-            if reference is not None:
+            references=[((1853,1048),_goblin_counter(kind))]
+            if kind=='research':
+                references.append(((1920,1080),_goblin_counter(kind,native=True)))
+            for size,reference in references:
+                if reference is None:continue
+                region=crop(cv2.resize(frame,size),bounds)
+                if region.shape[0]<reference.shape[0] or region.shape[1]<reference.shape[1]:continue
                 _,score,_,(x,y)=cv2.minMaxLoc(cv2.matchTemplate(region,reference,cv2.TM_CCOEFF_NORMED))
                 observed=region[y:y+reference.shape[0],x:x+reference.shape[1]]
                 if score>=.96 and observed.mean()>=reference.mean()*.85:
                     if not 0<=free<=total or total<2:return None
                     free=max(0,free-1);total-=1
+                    break
         maximum=6 if kind=='buildings' else 1
         return (free,total) if 0 <= free <= total <= maximum and total>0 else None
 
@@ -339,7 +382,8 @@ class UpgradeReader:
         return candidates, bottom < round(h*.89)
 
     def confirmation(self, frame, candidate):
-        heading=self.label(frame,(.26,.035,.73,.095))
+        frame=self._restore_capped_home_confirmation(frame,candidate)
+        heading=self.upgrade_title(frame,candidate)
         normalized=upgrade_heading(heading,candidate)
         if not normalized.startswith('upgrade'+compact(candidate.name)+'toleve'):
             return None
@@ -356,7 +400,16 @@ class UpgradeReader:
             if bw < w*.12 or bh < h*.07:
                 continue
             cell=button[y:y+bh,x:x+bw]
-            label=text(cell[round(bh*.10):round(bh*.40),round(bw*.15):round(bw*.85)],stop=self.stop)
+            label_image=cell[round(bh*.10):round(bh*.40),round(bw*.15):round(bw*.85)]
+            label=text(label_image,stop=self.stop)
+            if not label.strip():
+                # Pale green buttons can defeat the normal line reader. Both
+                # polarities of the isolated text mask must agree on the label.
+                from coc_bot.vision.ocr import _button_label_variants
+                variants=_button_label_variants(label_image)
+                readings=[compact(text(v,stop=self.stop,psm=8)) for v in variants[:2]]
+                if readings[0] == readings[1] and readings[0] in ('confirm','upgrade'):
+                    label=readings[0]
             # Eight-digit prices begin close to the left edge. Keep the whole
             # number while excluding the resource icon on the right.
             # The green button shades its white text differently from the list.
@@ -371,6 +424,65 @@ class UpgradeReader:
                 targets.append({'point':(x0+x+bw//2,y0+y+bh//2), 'level_text':heading,
                                 'name':candidate.name,'cost':price,'currency':resource})
         return targets[0] if len(targets)==1 else None
+
+    def _restore_capped_home_confirmation(self, frame, candidate):
+        """Restore one exact-cap Home payment modal after its foreground is proven.
+
+        The popup itself is rendered at the measured 178 ceiling while the
+        intentionally dimmed scene behind it can remain at 89. The candidate
+        title, red close with a white X, and a green button carrying the
+        requested resource must all be visible before strict price parsing is
+        allowed on a locally restored copy. BuilderReader overrides
+        ``confirmation`` and never enters this Home-only path.
+        """
+        from coc_bot.vision.capped_frames import has_exact_cap_178, restore_cap_178
+        if not has_exact_cap_178(frame):
+            return frame
+        raw_heading=self.upgrade_title(frame,candidate)
+        heading = upgrade_heading(raw_heading,candidate)
+        title_prefix='upgrade'+compact(candidate.name)+'tolevel'
+        title_alnum=re.sub(r'[^a-z0-9]','',unicodedata.normalize('NFKD',raw_heading).lower())
+        if compact(candidate.name)=='lassi':
+            title_alnum=re.sub(r'[^a-z0-9]','',_pet_ocr(title_alnum).lower())
+        if compact(candidate.name) in ('barracks','darkbarracks'):
+            title_alnum=re.sub(r'bar{3}acks','barracks',title_alnum)
+        if compact(candidate.name)=='clancastle':
+            title_alnum=title_alnum.replace('clancastile','clancastle')
+        # The normal compact helper intentionally removes digits, so retain the
+        # raw alphanumeric suffix here and require one complete level number.
+        if (not heading.startswith(title_prefix)
+                or not title_alnum.startswith(title_prefix)
+                or re.fullmatch(r'\d{1,3}',title_alnum[len(title_prefix):]) is None):
+            return frame
+
+        h,w=frame.shape[:2]
+        close=crop(frame,(.865,.04,.907,.113))
+        hsv=cv2.cvtColor(close,cv2.COLOR_BGR2HSV)
+        red=(cv2.inRange(hsv,(0,100,100),(10,255,255))
+             | cv2.inRange(hsv,(170,100,100),(180,255,255)))
+        # Check the bright X separately from the red surround. V=160 is below
+        # the measured cap, while the low saturation rejects the red button.
+        x_mark=crop(frame,(.875,.052,.900,.096))
+        x_hsv=cv2.cvtColor(x_mark,cv2.COLOR_BGR2HSV)
+        white=cv2.inRange(x_hsv,(0,0,160),(180,75,178))
+        if red.mean()/255 < .25 or white.mean()/255 < .12:
+            return frame
+
+        x0,y0=round(w*.46),round(h*.80)
+        button=frame[y0:round(h*.95),x0:round(w*.79)]
+        button_hsv=cv2.cvtColor(button,cv2.COLOR_BGR2HSV)
+        green=cv2.inRange(button_hsv,(35,80,130),(90,255,255))
+        green=cv2.morphologyEx(green,cv2.MORPH_CLOSE,np.ones((5,5),np.uint8))
+        contours,_=cv2.findContours(green,cv2.RETR_EXTERNAL,cv2.CHAIN_APPROX_SIMPLE)
+        for contour in contours:
+            x,y,bw,bh=cv2.boundingRect(contour)
+            if bw < w*.12 or bh < h*.07:
+                continue
+            cell=button[y:y+bh,x:x+bw]
+            resource_icon=cell[round(bh*.35):round(bh*.95),round(bw*.79):round(bw*.99)]
+            if currency(resource_icon)==candidate.currency:
+                return restore_cap_178(frame)
+        return frame
 
     def active_names(self, frame, kind=None):
         """Active upgrades use green progress rows above Suggested upgrades."""
@@ -406,6 +518,8 @@ class UpgradeReader:
                     mask=cv2.inRange(hsv,(0,0,220),(180,65,255))
                     letters=cv2.copyMakeBorder(255-mask,8,8,8,8,cv2.BORDER_CONSTANT,value=255)
                     value=text(letters,stop=self.stop)
-                    result.append(compact(pet_name(value) or value))
+                    name=compact(pet_name(value) or value)
+                    # The observed running-timer font reads the middle O as A.
+                    result.append('laboratory' if name=='laboratary' else name)
                 start=None
         return result

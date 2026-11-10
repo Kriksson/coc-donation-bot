@@ -4,6 +4,7 @@ from dataclasses import replace
 from coc_bot.upgrades.runner import UpgradeRunner
 from coc_bot.upgrades.vision import compact
 from coc_bot.builder_base.vision import BuilderReader
+from coc_bot.builder_base.frames import BuilderFrameCapture
 
 BUILDINGS = {compact(name) for name in (
     'Star Laboratory', 'Builder Barracks',
@@ -48,7 +49,7 @@ class BuilderUpgradeRunner(UpgradeRunner):
     def __init__(self, config, capture, input_ctrl, navigator, stop=None):
         # The common transaction only uses this setting to stop list exploration.
         super().__init__(replace(config, upgrade_builders_reserved=config.builder_base_builders_reserved),
-                         capture, input_ctrl, navigator, stop)
+                         BuilderFrameCapture(capture,navigator), input_ctrl, navigator, stop)
         self.reader = BuilderReader(stop)
         self.path = config.data_dir/'builder_base/upgrades.json'
 

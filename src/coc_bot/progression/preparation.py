@@ -17,6 +17,7 @@ from coc_bot.upgrades.vision import text, compact, crop
 from coc_bot.upgrades.runner import write_json
 from coc_bot.upgrades.scroll import menu_list_unchanged
 from coc_bot.vision.battle_menu import _white_label, direct_match_button, home_build_control_visible
+from coc_bot.vision.home_frames import home_capture
 
 
 @lru_cache(maxsize=1)
@@ -165,12 +166,32 @@ def picker_editor_visible(frame, stop=None):
     return army_heading_visible(cv2.convertScaleAbs(frame,alpha=1.25),stop)
 
 
+@lru_cache(maxsize=1)
+def _edit_army_label():
+    return cv2.imread(str(Path(__file__).with_name('assets')/'edit_army_label.png'))
+
+
 def edit_army_button(frame, stop=None):
-    # Keep portrait artwork outside the text crop; it adds false letters.
-    if _white_label(frame,(.088,.925,.185,.98),stop)!='editarmy':return None
+    if not isinstance(frame,np.ndarray) or stop and stop():return None
     green=cv2.inRange(cv2.cvtColor(crop(frame,(.045,.915,.193,.99)),cv2.COLOR_BGR2HSV),
                       (30,70,100),(90,255,255))
     if green.mean()/255<.25:return None
+    # The native 1920px lettering is read as "Edit Armyy" by OCR. Match its
+    # actual artwork inside the same text bounds, with independent green and
+    # brightness proof, before falling back to the existing exact OCR label.
+    region=crop(frame,(.088,.925,.185,.98))
+    reference=_edit_army_label()
+    if reference is not None:
+        for factor in (.98,1.0,1.02):
+            scale=frame.shape[1]/1920*factor
+            ref=cv2.resize(reference,None,fx=scale,fy=scale)
+            rh,rw=ref.shape[:2]
+            if region.shape[0]<rh or region.shape[1]<rw:continue
+            _,score,_,(x,y)=cv2.minMaxLoc(cv2.matchTemplate(region,ref,cv2.TM_CCOEFF_NORMED))
+            if score>=.97 and region[y:y+rh,x:x+rw].mean()>=ref.mean()*.85:
+                return round(frame.shape[1]*.117),round(frame.shape[0]*.951)
+    # Keep portrait artwork outside the text crop; it adds false letters.
+    if _white_label(frame,(.088,.925,.185,.98),stop)!='editarmy':return None
     return round(frame.shape[1]*.117),round(frame.shape[0]*.951)
 
 
@@ -260,6 +281,11 @@ def picker_unlocks(frame,catalog,stop=None):
 class ArmyPreparation:
     def __init__(self,session):
         self.s=session;self.stop=session.client.stop_check
+        self.capture=home_capture(session.capture,session.navigator)
+        # Farming navigation stays on the Home proxy for its Home-only screens;
+        # battlefield and unknown frames fail the positive Home gates.
+        if hasattr(session.attack_nav,'capture'):
+            session.attack_nav.capture=self.capture
         self.catalog=learned_catalog(session.config,use_saved_routine=False)
         self.army_references=set()
         self.references=session.config.data_dir/'progression/picker-references'
@@ -268,13 +294,13 @@ class ArmyPreparation:
         load_references(self.small_references,self.catalog,picker=False)
 
     def frame(self):
-        check_stop(self.stop);f=self.s.capture.screenshot();check_stop(self.stop);self.last_frame=f;return f
+        check_stop(self.stop);f=self.capture.screenshot();check_stop(self.stop);self.last_frame=f;return f
 
     def tap(self,point):
         check_stop(self.stop);self.s.input.tap(*point,jitter=0);self.s._sleep(.25)
 
     def hall(self):
-        r=ProgressionRunner(self.s.config,self.s.capture,self.s.input,self.s.navigator,self.stop)
+        r=ProgressionRunner(self.s.config,self.capture,self.s.input,self.s.navigator,self.stop)
         try:
             frame=r.open_menu('buildings')
             if frame is None:raise ValueError('Stopped')
@@ -342,11 +368,19 @@ class ArmyPreparation:
         button=edit_army_button(frame,self.stop)
         if button is None:
             raise ValueError('Edit Army control was not verified')
-        self.tap(button)
-        for _ in range(5):
-            frame=self.frame()
-            if visible(frame,self.stop):return frame
-            self.s._sleep(.25)
+        for attempt in range(2):
+            self.tap(button)
+            for _ in range(5):
+                frame=self.frame()
+                if visible(frame,self.stop):return frame
+                self.s._sleep(.25)
+            # The side drawer can expose lettering before it accepts input.
+            # Retry navigation only after the same non-spending menu is proved
+            # again; never send another tap into an unknown overlay or battle.
+            if attempt or direct_match_button(frame,stop_check=self.stop) is None:
+                break
+            button=edit_army_button(frame,self.stop)
+            if button is None:break
         raise ValueError('My Army did not open')
 
     def observe(self, *, expected_edit=None):

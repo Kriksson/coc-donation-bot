@@ -15,6 +15,16 @@ class CaptureRecovery:
         self.cancel = threading.Event()
         self.thread = None
         self.last_attempt = float('-inf')
+        self.native_platform = None
+
+    def recovery_platform(self):
+        if self.service.platform is not None:return self.service.platform
+        import os, shutil
+        if os.environ.get('COC_HOST_SOCKET') or not shutil.which('waydroid'):return None
+        if self.native_platform is None:
+            from coc_bot.control.native_recovery import NativeRecoveryPlatform
+            self.native_platform = NativeRecoveryPlatform()
+        return self.native_platform
 
     @property
     def active(self):
@@ -24,7 +34,7 @@ class CaptureRecovery:
         from coc_bot.config import load_config
         service = self.service
         with service.lock:
-            platform = service.platform
+            platform = self.recovery_platform()
             if (platform is None or self.active or self.cancel.is_set() or
                     platform.snapshot()['busy'] or not platform.snapshot()['ready'] or
                     service.manual_owner or service.settings_update or
@@ -41,7 +51,7 @@ class CaptureRecovery:
             resume = state.active and service.operation == 'bot'
             options = service.controller.options
             platform.recovering = True
-            platform.update('recovering', 'Checking stalled Android capture')
+            platform.update('recovering', 'Проверяю доступность Android после ошибок снимков')
             self.thread = threading.Thread(target=copy_context().run, args=(self._run, config, resume, options),
                                            name='capture-recovery', daemon=True)
             self.thread.start()
@@ -125,6 +135,9 @@ class CaptureRecovery:
         return restart
 
     def _ensure_capture_session(self, config, platform):
+        if self.service.platform is None:
+            if self.service.accounts:self.service.accounts.store.require_ready()
+            return self.recovery_platform().ensure_capture(self, config)
         from coc_bot.runtime.device_lease import DeviceLease
         from coc_bot.host_bridge import request, startup_status, HELPER_REFRESH_REQUIRED, STARTUP_TIMEOUT_SECONDS
         initial = startup_status()
@@ -159,8 +172,9 @@ class CaptureRecovery:
         return True
 
     def _run(self, config, resume, options):
-        service, platform = self.service, self.service.platform
+        service, platform = self.service, self.recovery_platform()
         try:
+            platform.cancel = self.cancel
             logger.warning('Repeated capture failures — pausing inputs to check Android renderer')
             service.controller.stop()
             deadline = time.monotonic() + 45

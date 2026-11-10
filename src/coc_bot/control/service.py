@@ -48,6 +48,8 @@ class ControlService:
 
 
     def idle(self):
+        if self.capture_recovery.active:
+            raise BusyError('Восстанавливается Android; дождитесь завершения или нажмите Stop')
         if any(s.controller.snapshot().active or s.manual_owner or s.settings_update
                or (s.platform is not None and s.platform.snapshot()["busy"])
                for s in [self, *self.peers]):
@@ -61,6 +63,8 @@ class ControlService:
                 if account and not account['roles']:
                     raise ValueError('Choose at least one account role before starting automation')
             self.capture_recovery.cancel.clear()
+            if self.capture_recovery.native_platform is not None:
+                self.capture_recovery.native_platform.update('ready', 'Повторная проверка локального Android разрешена', ready=True)
             if self.platform is not None and not self.platform.snapshot()["ready"]:
                 raise BusyError("Finish Android and game setup before starting the bot.")
             from coc_bot.config import load_config
@@ -297,23 +301,36 @@ class ControlService:
                     "in_battle": "In battle", "battle_results": "Leaving battle", "returning_home": "Returning home",
                     "recovering": "Recovering", "layouts":"Arranging layout",
                     "upgrading":"Checking upgrades","builder_base":"Visiting Builder Base"}.get(phase)
+                monitor = getattr(bot, 'progress_watchdog', None)
+                if monitor is not None and monitor.status:
+                    activity = monitor.status
                 from coc_bot.accounts.rotation import AccountFleet
                 if isinstance(bot,AccountFleet) and bot.activity.startswith('Switching to '):
                     activity=bot.activity
+            android_recovery = self.capture_recovery.native_platform
+            if android_recovery is not None and self.capture_recovery.active:
+                activity = android_recovery.snapshot()['message']
             from coc_bot.config import load_config
             from coc_bot.control.resource_status import resource_status
             config=(getattr(bot,'config',None) if bot is not None and state['active'] else None) or load_config()
             farming=resource_status(config)
+            builder_resources=resource_status(config,'builder')
+            from coc_bot.control.task_status import task_status
+            schedule=task_status(config,state,bot,farming,builder_resources,activity)
+            from coc_bot.control.event_labels import activity_label,error_label
             return state | {"operation": self.operation, "result": self.result,
                             "account": self.accounts.store.account() if self.accounts else None,
                             "account_pending": bool(self.accounts and self.accounts.store.load().get('pending')),
                             # Inert compatibility fields for already-open older clients.
                             "timers": {"farm_seconds": None, "break_seconds": None},
                             "resource_farming": farming,
+                            "builder_resources":builder_resources,"task_status":schedule,
                             "manual_control": self.manual_owner is not None,
                             "settings_update": self.settings_update,
                             "platform": self.platform.snapshot() if self.platform is not None else None,
                             "activity": activity,
+                            "activity_label":activity_label(activity),
+                            "error_label":error_label(state.get('error')),
                             "on_break": False}
 
     def close(self):

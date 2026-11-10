@@ -119,6 +119,7 @@ def create_app(service=None, auth_path=None, origins=None, secure_cookie=False,
         from loguru import logger
         sink = logger.add(lambda message: service.events.append(
             message.record["level"].name, message.record["message"]))
+        service.events.append('INFO','Панель управления готова')
         import os
         if os.environ.get("COC_HOST_SOCKET") and scope is None:
             from coc_bot.control.platform import Platform
@@ -251,6 +252,12 @@ def create_app(service=None, auth_path=None, origins=None, secure_cookie=False,
     @app.get("/api/status")
     def status():
         return service.snapshot()
+
+    @app.get('/api/network')
+    def network():
+        from coc_bot.web.network import advertised_urls
+        urls=advertised_urls(allowed_origins)
+        return {'enabled':bool(urls),'urls':urls}
 
     @app.get("/api/mode")
     def interface_mode():
@@ -519,6 +526,36 @@ def create_app(service=None, auth_path=None, origins=None, secure_cookie=False,
         with service.mutation():
             delete_backup(find_backup(ident))
             return {"deleted": True}
+
+    def battle_config():
+        from coc_bot.config import load_config
+        return getattr(service.controller.bot,'config',None) or load_config()
+
+    @app.get('/api/battles')
+    def battle_history():
+        from coc_bot.runtime.battle_history import history
+        entries=history(battle_config())[:20]
+        from coc_bot.control.event_labels import _NAMES,error_label
+        for entry in entries:
+            entry['reason_label']=('Деревня подтверждена после боя' if entry.get('status')=='returned'
+                else 'Завершение боя ещё не подтверждено' if entry.get('status')=='running'
+                else 'Нет подтверждённых высадок' if entry.get('reason')=='no_verified_deployment'
+                else error_label(entry.get('reason')))
+        units={unit for entry in entries for unit in entry.get('deployments',{})}
+        units.update(a['unit'] for entry in entries for a in entry.get('army',[]))
+        return {'entries':entries,'unit_labels':{u:_NAMES.get(u.replace('_',' ').title(),'Неизвестный отряд') for u in units}}
+
+    @app.get('/api/battles/{ident}/image')
+    def battle_image(ident: str):
+        from coc_bot.runtime.battle_history import history
+        config=battle_config()
+        if not any(e.get('id')==ident and e.get('image') for e in history(config)):
+            raise HTTPException(404,'Battle image not found')
+        import re
+        if not re.fullmatch(r'[0-9a-f]{32}',ident):raise HTTPException(404,'Battle image not found')
+        path=config.data_dir/'battles'/f'{ident}.png'
+        if not path.is_file() or path.is_symlink():raise HTTPException(404,'Battle image not found')
+        return FileResponse(path,media_type='image/png')
 
     @app.get("/api/events")
     def events(after: int = 0):

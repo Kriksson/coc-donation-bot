@@ -69,6 +69,55 @@ class UpgradeImageTests(unittest.TestCase):
     """Only isolated game controls are stored, with no account or village data."""
     fixtures=Path(__file__).with_name('fixtures')/'upgrades'
 
+    def test_native_free_laboratory_and_farming_dragon_are_read(self):
+        from coc_bot.progression.reader import ProgressionReader
+        frame=cv2.imread(str(self.fixtures.parent/'progression/research-menu-native.png'))
+        reader=ProgressionReader()
+        self.assertEqual(reader.menu_kind(frame),'research')
+        self.assertEqual(reader.availability(frame,'research'),(1,1))
+        dragon=next(row for row in reader.rows(frame) if row['name']=='Dragon')
+        self.assertEqual((dragon['cost'],dragon['currency']),(1_500_000,'elixir'))
+        # An unreadable counter must not authorize a free Laboratory.
+        missing=frame.copy()
+        missing[1020:1061,1551:1640]=0
+        self.assertIsNone(reader.availability(missing,'research'))
+
+    def test_native_running_dragon_excludes_gem_only_goblin(self):
+        from coc_bot.progression.reader import ProgressionReader
+        frame=cv2.imread(str(self.fixtures.parent/'progression/research-running-native.png'))
+        reader=ProgressionReader()
+        self.assertEqual(reader.availability(frame,'research'),(0,1))
+        self.assertEqual(reader.active_names(frame),['dragon'])
+        with tempfile.TemporaryDirectory() as folder:
+            runner=UpgradeRunner.__new__(UpgradeRunner)
+            runner.reader=reader;runner.path=Path(folder)/'state.json'
+            state={'pending':{'kind':'research','name':'Dragon','free_before':1,
+                              'active_before':0,'phase':'confirming'}}
+            self.assertTrue(runner._verify_pending(state,'research',frame))
+            self.assertNotIn('pending',state)
+            self.assertEqual(state['last_completed']['phase'],'confirmed')
+        # Without the independently verified Goblin icon, 1/2 cannot be
+        # interpreted as a valid free ordinary Laboratory.
+        frame[972:1020,1545:1650]=0
+        self.assertIsNone(reader.availability(frame,'research'))
+
+    def test_long_dark_spell_factory_title_keeps_upgrade_prefix_and_level(self):
+        frame=cv2.imread(str(self.fixtures/'dark-spell-factory-confirmation.png'))
+        reader=UpgradeReader()
+        candidate=Candidate('Dark Spell Factory',300_000,'elixir',(1,1))
+        result=reader.confirmation(frame,candidate)
+        self.assertIsNotNone(result)
+        self.assertEqual(result['cost'],300_000)
+        self.assertIn('Level 3',result['level_text'])
+        self.assertEqual(reader.detail_close(frame),(1701,81))
+        for name,price,resource in [('Dark Spell Factory',500_000,'elixir'),
+                                    ('Dark Spell Factory',30_000,'elixir'),
+                                    ('Dark Spell Factory',300_000,'gold'),
+                                    ('Dark Spell Factory',300_000,'gems'),
+                                    ('Spell Factory',300_000,'elixir')]:
+            with self.subTest(name=name,price=price,resource=resource):
+                self.assertIsNone(reader.confirmation(frame,Candidate(name,price,resource,(1,1))))
+
     def test_discount_reads_payable_price_not_crossed_out_price(self):
         frame=cv2.imread(str(self.fixtures/'discounted-confirmation-controls.png'))
         reader=UpgradeReader()

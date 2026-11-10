@@ -358,8 +358,8 @@ def recover_attack(session, *, tracker=None, verify_account=False):
         check_stop(stop)
         frame = session.capture.screenshot()
         check_stop(stop)
-        from coc_bot.progression.home import recover_home_bonus
-        if donation is not None and recover_home_bonus(donation,frame):
+        from coc_bot.progression.home import recover_known_overlay
+        if donation is not None and recover_known_overlay(donation,frame):
             session._sleep(.6)
             continue
         if donation is not None and nav.classifier._clan_chat_anchor_visible(frame):

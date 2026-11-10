@@ -1,205 +1,211 @@
-/* Harbor is the sole web interface. Craft informed by unslop,
-   Damir Sokolovsky (@heydamir), CC BY 4.0, and Apple HIG. */
-/* Semantic feedback remains readable on opaque content surfaces. */
-:root[data-appearance]{--panel:var(--surface);--panel-hover:var(--surface-hover)}
-:root[data-appearance] input:not([type=checkbox]),
-:root[data-appearance] select,
-:root[data-appearance] textarea,
-:root[data-appearance] .search-field{border-color:var(--border)}
-:root[data-appearance] .search-field input{border:0}
-:root[data-appearance] .danger{background:var(--danger);color:#fff}
-:root[data-appearance] .danger:hover:not(:disabled){background:color-mix(in srgb,var(--danger) 88%,black)}
-:root[data-appearance] .danger-quiet,
-:root[data-appearance] .status-dot.failed,
-:root[data-appearance] .run-indicator.failed,
-:root[data-appearance] .run-error,
-:root[data-appearance] [role=alert],
-:root[data-appearance] .log-entry.error,
-:root[data-appearance] .log-entry.critical{color:var(--error)}
-:root[data-appearance] .status-dot.failed,
-:root[data-appearance] .log-entry.error .log-dot{background:var(--error)}
-:root[data-appearance] .log-entry.warning .log-dot{background:var(--warning)}
-:root[data-appearance] .resource{--resource:var(--gold)}
-:root[data-appearance] .resource.elixir{--resource:var(--elixir)}
-:root[data-appearance] .resource.dark_elixir{--resource:var(--dark-elixir)}
-:root{--stroke:color-mix(in srgb,var(--text) 12%,transparent)}
-:root .brand{font-weight:600;letter-spacing:0;font-size:18px}
-:root h1{font-size:28px;letter-spacing:-.5px;font-weight:500}
-:root .panel{box-shadow:none}
-:root .primary{background:var(--cobalt);color:#fff}
-:root .primary:hover:not(:disabled){background:color-mix(in srgb,var(--cobalt) 88%,white)}
-:root .play{background:var(--panel)}
-:root .brand-icon{background:none;border:0;color:var(--text-secondary)}
-:root .primary-nav i{display:none}
-:root .status-dot.connected{box-shadow:none}
-:root .run-activity{font-weight:500;letter-spacing:0}
-:root .badge,
-:root .chip{font-size:12px;letter-spacing:0}
-:root .run-status,
-:root .resource-caption,
-:root .resource-caption strong,
-:root .resource-amount,
-:root .resource-status,
-:root .log time,
-:root .activity-options .toggle,
-:root .role-badge,
-:root .clan-tag,
-:root .account-identity>span{font-size:12px;letter-spacing:0}
-:root .activity-options{gap:16px;flex-wrap:wrap}
-:root .activity-options input[type=checkbox]{width:34px;min-height:20px;height:20px}
-:root .activity-options input[type=checkbox]::after{width:12px;height:12px;top:3px;left:3px}
-:root .activity-options input[type=checkbox]:checked::after{transform:translateX(14px)}
-:root .log{font-size:13px}
-:root .log-entry{grid-template-columns:64px 4px minmax(0,1fr);gap:12px}
-:root .resource-track{height:8px}
-:root .resource-track>span{transition:none}
-:root .resource-track>i{top:-4px;height:16px}
-:root .controls button{min-width:104px;min-height:44px;margin:0}
-:root button:active:not(:disabled){filter:brightness(.9)}
-:root .current-badge{font-size:12px}
-:root .account-shortcut small{font-size:12px}
-:root .setting-name label{font-size:14px}
-:root .setting>input,
-:root .setting>select{font-size:14px}
+@import url('/fonts/inter.css');
 
+/* Visual system shared with the local UniCode application. */
+:root {
+  font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  color-scheme: light;
+  --panel: var(--surface);
+  --panel-hover: var(--surface-hover);
+  --stroke: #eae5e1;
+  --stroke-soft: #f0ece8;
+  --accent-soft: #fceeee;
+}
+body { background: var(--bg); font-size: 13px; }
+::selection { background: #f6caca; color: #432020; }
+:root .app { grid-template-columns: 268px minmax(0,1fr); min-height: 100dvh; }
+:root .sidebar {
+  position: sticky; top: 0; height: 100dvh; width: 268px; margin: 0;
+  padding: 24px 16px 18px; gap: 27px; border: 0; border-right: 1px solid #eeeaea;
+  border-radius: 0; background: var(--sidebar); box-shadow: none;
+}
+:root .brand { padding: 0 10px; gap: 10px; min-height: 43px; font-size: 21px; font-weight: 600; letter-spacing: -.8px; }
+:root .brand>span:last-child { display: inline; }
+:root .brand-icon { width: 34px; height: 34px; color: var(--accent); border: 0; background: #fceeee; border-radius: 10px; }
+:root .primary-nav { display: grid; gap: 5px; width: 100%; }
+:root .primary-nav button { justify-content: flex-start; min-height: 39px; gap: 10px; padding: 10px 12px; font-size: 12.5px; font-weight: 450; border-radius: 7px; color: #78716e; }
+:root .primary-nav button>span { display: inline; }
+:root .primary-nav button.selected { color: var(--accent)!important; background: #fceeee!important; font-weight: 550; box-shadow: none; }
+:root .primary-nav button:hover:not(.selected) { background: #f0edeb; }
+:root .primary-nav svg { width: 18px; height: 18px; }
+:root .primary-nav i { display: none; }
+:root .sidebar-bottom { width: 100%; padding-top: 14px; border-top: 1px solid var(--stroke); }
+:root .account-shortcut { justify-content: flex-start; padding: 9px 7px; }
+:root .account-shortcut>span:nth-child(2) { display: grid; }
+:root .account-shortcut>svg { display: block; }
+:root .avatar { border-radius: 9px; background: #f0ebe7; color: #75655d; border: 0; }
+:root .account-shortcut small { font-size: 11px; }
+:root main.page { width: 100%; max-width: 1400px; margin: 0 auto; padding: 30px 38px 44px; }
+:root .page-header { min-height: 48px; margin-bottom: 28px; padding: 0 0 21px; border: 0; border-bottom: 1px solid var(--stroke-soft); border-radius: 0; background: transparent; box-shadow: none; }
+:root h1 { font-size: 26px; letter-spacing: -.8px; font-weight: 500; }
+:root h2 { font-size: 20px; letter-spacing: -.5px; font-weight: 550; }
+:root .header-actions { gap: 8px; }
+:root .header-account { display: none; }
+:root button { font-size: 12px; font-weight: 500; border-radius: 7px; min-height: 36px; }
+:root button:active:not(:disabled) { filter: brightness(.97); }
+:root .primary { background: var(--accent); color: #fff; border-color: transparent; }
+:root .primary:hover:not(:disabled) { background: #bd2929; }
+:root .danger { background: #fff; color: var(--danger); border-color: #e9c7c8; }
+:root .danger:hover:not(:disabled) { background: #fceeee; border-color: #dca7aa; }
+:root .danger-quiet { color: var(--danger); }
+:root .quiet,:root .icon-button,:root .live-button { background: transparent; border-color: transparent; }
+:root .icon-button { width: 32px; height: 32px; min-height: 32px; min-width: 32px; padding: 6px; }
+:root input:not([type=checkbox]),:root select,:root textarea { background: #fff; border-color: var(--border); border-radius: 7px; min-height: 38px; font-size: 13px; }
+:root input:focus,:root select:focus,:root textarea:focus { border-color: #dca3a3; outline-color: #d7373766; }
+:root input[type=checkbox] { background: #e9e3df; border-color: #e1d9d4; }
+:root input[type=checkbox]:checked { background: var(--accent); border-color: var(--accent); }
+:root input[type=checkbox]:checked::after { background: #fff; }
+:root .panel { background: #fff; border: 1px solid var(--stroke); border-radius: 11px; box-shadow: none; }
+:root .badge,:root .chip { padding: 4px 7px; border-color: #ece5e1; background: #faf8f6; border-radius: 5px; font-size: 10px; font-weight: 450; letter-spacing: 0; }
+:root .status-dot.connected { background: var(--success); box-shadow: none; }
+:root .status-dot.failed,:root .run-indicator.failed,:root .run-error,:root [role=alert] { color: var(--error); }
+:root .status-dot.failed { background: var(--error); }
+:root .play { padding: 25px 26px; margin-bottom: 20px; gap: 22px; background: #fff; }
+:root .run-indicator { width: 45px; height: 45px; border: 0; border-radius: 12px; background: #faf5f1; color: #a28c7e; }
+:root .run-indicator.running { color: var(--success); background: #eff6ef; }
+:root .run-indicator.failed { color: var(--error); background: #fceeee; }
+:root .run-status { font-size: 11px; margin-bottom: 7px; }
+:root .run-activity { font-size: 21px; font-weight: 500; line-height: 1.4; letter-spacing: -.5px; }
+:root .controls { gap: 8px; }
+:root .controls button { min-width: 93px; min-height: 39px; margin: 0; }
+:root .dashboard-grid { grid-template-columns: minmax(0,1fr); gap: 20px; }
+:root .overview-side { display: grid; grid-template-columns: 1fr; gap: 10px; }
+:root .resource-card { padding: 23px 25px; }
+:root .resource-levels { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 30px; padding-top: 24px; }
+:root .resource { --resource: var(--gold); }
+:root .resource.elixir { --resource: var(--elixir); }
+:root .resource.dark_elixir { --resource: var(--dark-elixir); }
+:root .resource-caption { font-size: 11px; margin-bottom: 10px; }
+:root .resource-caption strong { font-size: 11px; }
+:root .resource-track { height: 5px; background: #f0eae5; }
+:root .resource-track>i { top: -3px; height: 11px; }
+:root .resource-amount { font-size: 12px; line-height: 1.7; margin-top: 9px; }
+:root .resource-status { font-size: 11px; margin-top: 20px; }
+:root .overview-practice { justify-self: end; padding: 0 2px; font-size: 11px; }
+:root .activity-controls { min-height: 63px; padding: 16px 22px; gap: 12px; }
+:root .activity-options { gap: 14px; flex-wrap: wrap; }
+:root .activity-options .toggle { font-size: 11px; }
+:root .activity-options input[type=checkbox] { width: 30px; height: 18px; min-height: 18px; }
+:root .activity-options input[type=checkbox]::after { width: 10px; height: 10px; top: 3px; left: 3px; }
+:root .activity-options input[type=checkbox]:checked::after { transform: translateX(12px); }
+:root .log { height: clamp(340px,48dvh,640px); padding: 0 22px 14px; font-size: 12px; line-height: 1.7; }
+:root .log-entry { grid-template-columns: 62px 5px minmax(0,1fr); gap: 12px; padding: 13px 0; }
+:root .log time { font-size: 10px; letter-spacing: 0; }
+:root .log-dot { background: #b8aaa0; }
+:root .log-entry.error,:root .log-entry.critical { color: var(--error); }
+:root .log-entry.error .log-dot,:root .log-entry.critical .log-dot { background: var(--error); opacity: 1; }
+:root .log-entry.warning .log-dot { background: var(--warning); opacity: 1; }
+:root .log-content { min-width: 0; }
+:root .log-message { color: inherit; white-space: pre-wrap; }
+:root .log-repeat { display: inline-block; margin-left: 8px; padding: 0 6px; border: 1px solid var(--stroke); border-radius: 4px; color: var(--text-secondary); font-size: 10px; }
+:root .log-details { margin-top: 4px; color: var(--text-secondary); font-size: 10px; }
+:root .log-details summary { width: fit-content; cursor: pointer; }
+:root .log-details pre { max-height: 200px; overflow: auto; padding: 10px; border-radius: 6px; background: #faf8f6; border: 1px solid var(--stroke-soft); white-space: pre-wrap; overflow-wrap: anywhere; font: 10px/1.65 'DejaVu Sans Mono',monospace; }
+:root .settings-workspace { max-width: 1120px; }
+:root .settings-actions { top: 0; background: #ffffffef; padding: 12px 0; margin-top: 0; margin-bottom: 20px; border: 0; border-bottom: 1px solid var(--stroke-soft); border-radius: 0; }
+:root .search-field { background: #fff; border-radius: 7px; border-color: var(--border); }
+:root .settings-layout { grid-template-columns: 174px minmax(0,1fr); gap: 26px; }
+:root .settings-nav { display: grid; position: sticky; top: 80px; padding: 0; align-self: start; gap: 4px; }
+:root .settings-nav button { justify-content: flex-start; min-height: 38px; padding: 10px 12px; border-radius: 7px; font-size: 12px; }
+:root .settings-nav button.selected { background: #fceeee!important; color: var(--accent)!important; }
+:root .settings.panel { border-radius: 10px; }
+:root .setting { min-height: 77px; padding: 20px 22px; gap: 16px 22px; }
+:root .setting-name label { font-size: 12px; font-weight: 500; }
+:root .setting-description { font-size: 11px; line-height: 1.75; }
+:root .setting>input:not([type=checkbox]) { max-width: 180px; }
+:root .setting>select { max-width: 240px; }
+:root .accounts-grid { gap: 20px; }
+:root .account-card { padding: 24px; }
+:root .account-identity strong { font-size: 15px; }
+:root .role-badge { font-size: 10px; }
+:root .current-badge { font-size: 10px; }
+:root .guide { padding: 28px; }
+:root .instructions { font-size: 12px; }
+:root .notice { border-radius: 7px; background: #fff7f3; border-color: #efe1d8; color: #875b44; }
+:root .modal { background: #fff; border-color: var(--stroke); border-radius: 13px; box-shadow: 0 18px 70px #3920171f; }
+:root .modal-backdrop { background: #30251e55; backdrop-filter: none; }
+:root .login form { box-shadow: 0 15px 55px #3920170a; }
+:root .phone-access { position: relative; font-size: 12px; }
+:root .phone-access>summary { list-style: none; display: inline-flex; align-items: center; gap: 7px; min-height: 36px; padding: 8px 10px; border-radius: 7px; cursor: pointer; color: var(--text-secondary); }
+:root .phone-access>summary::-webkit-details-marker { display: none; }
+:root .phone-access>summary:hover,:root .phone-access[open]>summary { background: #f5f2ef; color: var(--accent); }
+:root .phone-access-panel { position: absolute; top: calc(100% + 10px); right: 0; width: 320px; max-width: calc(100vw - 32px); z-index: 35; padding: 20px; background: #fff; border: 1px solid var(--stroke); border-radius: 12px; box-shadow: 0 12px 40px #39201714; }
+:root .phone-access-panel p { font-size: 12px; line-height: 1.75; color: var(--text-secondary); margin: 10px 0; }
+:root .phone-link { display: block; overflow-wrap: anywhere; user-select: all; padding: 10px 12px; border-radius: 6px; background: #faf7f4; color: var(--accent); font-size: 12px; line-height: 1.7; }
+:root .phone-access-panel button { margin-top: 12px; }
 
-/* Harbor: a quiet, persistent sidebar and generously grouped task surfaces. */
-:root .app{grid-template-columns:240px minmax(0,1fr)}
-:root .sidebar{gap:32px;padding:32px 16px 24px;background:var(--sidebar)}
-:root .brand{padding:0 12px}
-:root .brand>span:last-child{display:inline}
-:root .primary-nav{width:100%;gap:4px}
-:root .primary-nav button{justify-content:flex-start;min-height:44px;padding:12px;gap:12px;border-radius:12px;font-size:14px}
-:root .primary-nav button>span{display:inline}
-:root .primary-nav button.selected{color:var(--accent)!important;background:var(--panel-hover)!important}
-:root .sidebar-bottom{width:100%}
-:root .account-shortcut{justify-content:flex-start}
-:root .account-shortcut>span:nth-child(2){display:grid}
-:root .account-shortcut>svg{display:block}
-:root main.page{padding:32px clamp(24px,3vw,48px) 48px}
-:root .page-header{margin-bottom:32px;min-height:44px}
-:root .header-account{display:none}
-:root .panel{border-radius:16px}
-:root .play{padding:32px;gap:24px;margin-bottom:32px;border:0}
-:root .run-indicator{width:56px;height:56px;border-radius:16px;background:var(--bg);border:0}
-:root .dashboard-grid{grid-template-columns:minmax(0,1fr);gap:24px}
-:root .overview-side{gap:12px}
-:root .activity-controls{padding:20px 24px;min-height:72px}
-:root .log{height:clamp(280px,45dvh,600px);padding:0 24px 16px}
-:root .log-entry{padding:16px 0}
-:root .resource-card{padding:28px}
-:root .resource-levels{grid-template-columns:repeat(3,minmax(0,1fr));gap:32px;padding-top:24px}
-:root .resource-card>.empty-state{min-height:80px;padding:20px}
-:root .resource-caption{margin-bottom:12px}
-:root .resource-track{height:10px}
-:root .resource-amount{margin-top:12px;font-size:13px}
-:root .overview-practice{justify-self:end;gap:12px;padding:0 8px}
-:root .settings-layout{grid-template-columns:minmax(0,1fr);gap:24px}
-:root .settings-nav{display:flex;position:static;gap:4px;overflow:auto;padding-bottom:8px}
-:root .settings-nav button{flex-shrink:0;white-space:nowrap}
-:root .settings-nav button{font-size:14px;min-height:44px;padding:12px}
-:root .settings-nav button.selected{background:var(--panel-hover)!important;color:var(--text)!important}
-:root .setting{min-height:88px;padding:24px;gap:20px 24px}
-:root input:not([type=checkbox]),
-:root select{min-height:44px;border-radius:10px}
-:root .accounts-grid{grid-template-columns:repeat(auto-fit,minmax(min(100%,360px),1fr));gap:24px}
-:root .account-card{padding:28px}
-:root .account-identity strong{font-size:16px}
-:root .account-card-bottom button{font-size:13px;min-height:40px}
-:root .maintenance-status summary{padding:16px 0;font-size:13px}
-:root .guide{padding:32px}
+@media(max-width:1150px) {
+  :root .app { grid-template-columns: 218px minmax(0,1fr); }
+  :root .sidebar { width: 218px; }
+  :root main.page { padding: 26px 26px 36px; }
+  :root .settings-layout { grid-template-columns: 1fr; gap: 15px; }
+  :root .settings-nav { position: static; display: flex; overflow-x: auto; padding-bottom: 6px; }
+  :root .settings-nav button { flex-shrink: 0; white-space: nowrap; }
+}
+@media(max-width:760px) {
+  :root .app { display: block; }
+  :root .sidebar { position: sticky; top: 0; z-index: 30; display: flex; flex-direction: column; width: 100%; height: auto; padding: 11px 16px 8px; gap: 9px; border-right: 0; border-bottom: 1px solid var(--stroke); background: #faf9f8f5; }
+  :root .brand { font-size: 19px; padding: 0; min-height: 34px; }
+  :root .brand-icon { width: 30px; height: 30px; }
+  :root .primary-nav { display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; }
+  :root .primary-nav button { flex: 0 0 auto; width: auto; min-height: 40px; padding: 9px 11px; gap: 7px; font-size: 11px; }
+  :root .primary-nav button>span { display: inline; }
+  :root .sidebar-bottom { display: none; }
+  :root main.page { padding: 22px 16px 30px; }
+  :root .page-header { flex-wrap: wrap; gap: 12px; padding-bottom: 16px; margin-bottom: 20px; }
+  :root h1 { font-size: 23px; }
+  :root .header-actions { margin-left: auto; gap: 3px; }
+  :root .header-account { display: none; }
+  :root .live-button { padding: 8px; }
+  :root .phone-access>summary { padding: 8px; }
+  :root .play { padding: 20px; gap: 20px; }
+  :root .run-state { flex-basis: 100%; gap: 12px; }
+  :root .run-activity { font-size: 19px; }
+  :root .controls { width: 100%; display: flex; gap: 7px; }
+  :root .controls button { flex: 1; min-width: 0; min-height: 42px; padding: 10px 7px; font-size: 11px; }
+  :root .dashboard-grid { gap: 16px; }
+  :root .resource-card { padding: 20px; }
+  :root .resource-levels { grid-template-columns: 1fr; gap: 20px; padding-top: 20px; }
+  :root .overview-practice { min-height: 35px; }
+  :root .activity-controls { padding: 14px 16px; align-items: flex-start; }
+  :root .activity-options { gap: 9px; }
+  :root .activity-options .toggle { font-size: 10px; }
+  :root .log { height: 430px; padding: 0 15px 12px; }
+  :root .log-entry { grid-template-columns: 52px 4px minmax(0,1fr); gap: 8px; font-size: 12px; }
+  :root .log time { font-size: 9px; }
+  :root .setting { grid-template-columns: minmax(0,1fr) 35px; padding: 18px; gap: 12px; }
+  :root .setting>input:not([type=checkbox]),:root .setting>select { grid-column: 1/-1; width: 100%; max-width: none; justify-self: stretch; }
+  :root .settings-actions { top: 102px; gap: 10px; }
+  :root .accounts-grid,:root .setup { grid-template-columns: 1fr; }
+  :root .checklist { max-height: 250px; }
+  :root .account-card,:root .guide { padding: 21px; }
+  :root .upgrade-grid { grid-template-columns: 1fr; }
+  :root .upgrade-actions { grid-template-columns: 1fr; }
+  :root .modal-backdrop { padding: 9px; }
+  :root .modal { padding: 18px; max-height: 96dvh; }
+}
+@media(pointer:coarse) {
+  :root button,:root .primary-nav button,:root input:not([type=checkbox]),:root select,:root .phone-access>summary { min-height: 44px; }
+  :root .icon-button { min-width: 40px; min-height: 40px; }
+}
+@media(prefers-reduced-motion:reduce) { *,*::before,*::after { transition: none!important; animation: none!important; } }
 
-@media(max-width:1200px){
-  :root .app{grid-template-columns:200px minmax(0,1fr)}
-  :root .dashboard-grid{grid-template-columns:1fr}
-  :root .overview-side{grid-template-columns:1fr}
-  :root .settings-layout{grid-template-columns:1fr;gap:16px}
-  :root .settings-nav{display:flex;position:static;overflow:auto}
-  :root .settings-nav button{white-space:nowrap;flex-shrink:0}
-}
-@media(max-width:900px){
-  :root .header-actions{gap:8px}
-  :root .play{padding:24px;gap:20px}
-  :root .controls{width:100%}
-}
-@media(max-width:700px){
-  :root .app{display:block}
-  :root .sidebar{position:static;height:auto;padding:16px;gap:16px;flex-direction:column;align-items:stretch}
-  :root .brand{padding:0}
-  :root .primary-nav{display:flex;overflow-x:auto}
-  :root .primary-nav button{width:auto;flex:0 0 auto;padding:12px}
-  :root .sidebar-bottom{display:none}
-  :root .header-account{display:inline-flex}
-  :root main.page{padding:24px 16px 32px}
-  :root .page-header{align-items:flex-start;flex-wrap:wrap;gap:16px;margin-bottom:24px}
-  :root .header-actions{margin-left:auto}
-  :root .settings-actions{top:0}
-  :root .controls{display:flex;gap:8px}
-  :root .controls button{flex:1;min-width:88px}
-  :root .setting{grid-template-columns:minmax(0,1fr) 44px;padding:20px;gap:16px}
-  :root .setting>input:not([type=checkbox]),
-  :root .setting>select{grid-column:1/-1;max-width:none;width:100%}
-  :root .log{padding:0 16px 16px}
-  :root .log-entry{grid-template-columns:60px 4px minmax(0,1fr);gap:8px}
-  :root .resource-card,
-  :root .account-card{padding:24px}
-  :root .resource-levels{grid-template-columns:1fr;gap:24px}
-  :root .activity-controls{padding:16px}
-}
-@media(pointer:coarse){
-  :root .primary-nav button{min-height:44px}
-  :root .activity-options .toggle{min-height:44px}
-}
-@media(forced-colors:active){
-  :root .primary-nav button.selected{outline:2px solid Highlight}
-  :root .resource-track{border:1px solid CanvasText}
-}
+:root .resource-checked { color: var(--text-secondary); font-size: 10px; margin: 12px 0 0; }
+:root .overview-side > .resource-card + .resource-card { margin-top: 16px; }
+:root .message-details { margin-top: 5px; font-size: 11px; color: var(--text-secondary); }
+:root .message-details summary { cursor: pointer; }
+:root .message-details pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 200px; overflow: auto; padding: 9px; background: #faf8f6; border-radius: 5px; }
 
-/* Black translucent surfaces, cobalt actions, and brass accents. */
-:root{--panel-edge:rgba(196,163,108,.28);color-scheme:dark}
-body{isolation:isolate;min-height:100dvh;background:transparent}
-body::before{content:"";position:fixed;inset:0;z-index:-2;pointer-events:none;
-  background:var(--bg) url('/harbor-abstract.jpg') center/cover no-repeat}
-:root .app{grid-template-columns:256px minmax(0,1fr)}
-:root .sidebar{top:16px;height:calc(100dvh - 32px);margin:16px 0 16px 16px;padding:24px 16px;
-  border:1px solid var(--panel-edge);border-radius:24px;background:var(--sidebar);
-  box-shadow:inset 0 1px 0 #ffffff10,0 8px 32px #0005;z-index:10}
-:root main.page{padding:16px 32px 40px;max-width:1500px}
-:root .page-header{min-height:76px;padding:16px 24px;margin-bottom:24px;border:1px solid var(--panel-edge);
-  border-radius:20px;background:var(--sidebar);box-shadow:inset 0 1px 0 #ffffff10,0 4px 20px #0003}
-:root .primary-nav button{color:var(--text)}
-:root .primary-nav button.selected{color:var(--brass)!important;background:rgba(5,8,14,.32)!important;box-shadow:inset 0 0 0 1px rgba(196,163,108,.25)}
-:root .brand-icon{color:var(--brass)}
-:root .panel{background:rgba(5,8,14,.78);border-color:var(--stroke);background-clip:padding-box}
-:root .sidebar,:root .page-header{background:rgba(5,8,14,.82);background-clip:padding-box}
-:root .play{padding:28px;margin-bottom:24px;border:1px solid var(--stroke)}
-:root .settings-actions{top:16px;margin-top:0;padding:12px 16px;border:1px solid var(--stroke);border-radius:16px;background:var(--surface)}
-:root .settings-nav{padding:8px;border:1px solid var(--stroke);border-radius:16px;background:var(--surface)}
-:root .settings-layout{gap:16px}
-:root .tabs{background:var(--surface)}
-:root .overview-practice{padding:8px 12px;border-radius:10px;background:var(--surface);border:1px solid var(--stroke)}
-:root .role-badges{gap:8px}
-:root .primary-nav svg,:root .settings-nav svg{width:20px;height:20px;flex:none}
-:root .modal{background:var(--surface)}
-:root .modal-backdrop{background:rgba(0,0,0,.7);backdrop-filter:none}
-:root input[type=checkbox]:checked{background:var(--cobalt)}
-:root input[type=checkbox]:checked::after{background:#fff}
-:root .settings-nav button.selected{color:var(--brass)!important}
-
-@media(max-width:1200px){
-  :root .app{grid-template-columns:216px minmax(0,1fr)}
-  :root main.page{padding:16px 24px 32px}
-}
-@media(max-width:700px){
-  :root .app{display:block}
-  :root .sidebar{position:static;width:auto;min-width:0;height:auto;top:auto;margin:12px;padding:16px;border-radius:20px;gap:16px}
-  :root main.page{padding:0 12px 24px}
-  :root .page-header{padding:16px;gap:12px;min-height:72px;margin-bottom:16px}
-  :root .settings-actions{top:8px;padding:12px;margin-bottom:16px}
-  :root .play{padding:20px;margin-bottom:16px}
-}
-@media(prefers-reduced-transparency:reduce),(prefers-contrast:more),(forced-colors:active){
-  body::before{display:none}
-  :root .sidebar,:root .page-header,:root .panel{background:var(--surface);border-color:var(--border);box-shadow:none}
-  :root .panel,:root .settings-actions,:root .settings-nav{border-color:var(--border)}
-}
+:root .overview-feed { display: grid; gap: 16px; min-width: 0; align-content: start; }
+:root .task-overview, :root .battle-history { padding: 20px; }
+:root .task-reason { font-size: 14px; line-height: 1.5; margin: 12px 0; }
+:root .task-secondary { color: var(--text-secondary); font-size: 12px; line-height: 1.5; }
+:root .task-queue { list-style: none; padding: 0; margin: 16px 0; display: grid; gap: 10px; }
+:root .task-queue li { display: flex; align-items: start; gap: 10px; font-size: 13px; }
+:root .queue-number { color: var(--text-secondary); font-variant-numeric: tabular-nums; width: 16px; flex-shrink: 0; }
+:root .task-queue small { display: block; color: var(--text-secondary); margin-top: 3px; }
+:root .battle-entry { border-top: 1px solid var(--stroke); padding: 12px 0; }
+:root .battle-entry summary { cursor: pointer; display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: baseline; font-size: 13px; }
+:root .battle-entry time { color: var(--text-secondary); font-size: 12px; }
+:root .battle-entry strong { font-weight: 500; margin-left: auto; }
+:root .battle-detail { padding-top: 8px; font-size: 13px; line-height: 1.55; }
+:root .battle-detail a { color: var(--accent); text-decoration: underline; }

@@ -10,11 +10,11 @@ try {
     values:{gui_theme:'Ember'},search:'',setSearch(){},advanced:false,setAdvanced(){},dirty:false,saving:false,restarting:false,
     saveDisabled:false,resetDisabled:false,save(){},reset(){},edit(){}};
   const render=changes=>renderToStaticMarkup(React.createElement(SettingsPanel,{...props,...changes}));
-  const clean=render({});assert.ok(clean.includes('Theme'));assert.ok(!clean.includes('Discard'));assert.ok(!clean.includes('Save changes'));
+  const clean=render({});assert.ok(clean.includes('Theme'));assert.ok(!clean.includes('Отменить изменения'));assert.ok(!clean.includes('Сохранить изменения'));
   assert.ok(!clean.includes('account-context'));assert.ok(!clean.includes('>Stop<'));
-  const appearance=render({dirty:true});assert.ok(appearance.includes('Save changes'));assert.ok(!appearance.includes('Save &amp; restart'));
-  assert.ok(render({dirty:true,restarting:true}).includes('Save &amp; restart'));
-  assert.ok(render({dirty:true,saving:true}).includes('Applying…'));
+  const appearance=render({dirty:true});assert.ok(appearance.includes('Сохранить изменения'));assert.ok(!appearance.includes('Сохранить и перезапустить'));
+  assert.ok(render({dirty:true,restarting:true}).includes('Сохранить и перезапустить'));
+  assert.ok(render({dirty:true,saving:true}).includes('Применение…'));
   const {harborPalette,paletteProperties}=await server.ssrLoadModule('/src/interfacePalettes.ts');
   function luminance(hex){
     const rgb=hex.match(/[0-9a-f]{2}/gi).map(x=>parseInt(x,16)/255)
@@ -34,14 +34,9 @@ try {
     for(const meter of [palette.gold,palette.elixir,palette.dark_elixir])
       assert.ok(contrast(meter,palette.surface)>=3);
     assert.equal(paletteProperties(palette)['--field-bg'],palette.field_bg);
-    const blend=(hex,base,alpha)=>'#'+hex.match(/[0-9a-f]{2}/gi)
-      .map((part,i)=>Math.round(parseInt(part,16)*alpha+parseInt(base.slice(1+i*2,3+i*2),16)*(1-alpha)).toString(16).padStart(2,'0')).join('');
-    for(const backdrop of ['#000000','#ffffff']){
-      const glass=blend('#05080e',backdrop,.78);
-      for(const ink of [palette.text,palette.text_secondary,palette.accent,palette.brass])
-        assert.ok(contrast(ink,glass)>=4.5,'Translucent panels must stay readable over any wallpaper luminance');
-    }
+    assert.equal(palette.appearance,'light');
+
   }
   console.log('Settings component checks passed');
-  console.log('Harbor palette: readable text, actions, fields, and resource meters passed');
+  console.log('UniCode palette: readable text, actions, fields, and resource meters passed');
 } finally {await server.close();}

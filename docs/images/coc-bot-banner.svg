@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="320" viewBox="0 0 1200 320" fill="none">
+  <defs>
+    <linearGradient id="wash" x1="80" y1="20" x2="1120" y2="320" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFF7F5"/>
+      <stop offset="1" stop-color="#F7EFEC"/>
+    </linearGradient>
+    <linearGradient id="tower" x1="810" y1="84" x2="1083" y2="260" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F0444B"/>
+      <stop offset="1" stop-color="#C91E2B"/>
+    </linearGradient>
+  </defs>
+  <rect x="1" y="1" width="1198" height="318" rx="24" fill="url(#wash)" stroke="#E9DAD6" stroke-width="2"/>
+  <circle cx="1036" cy="157" r="126" fill="#F8E2DE"/>
+  <circle cx="1036" cy="157" r="94" stroke="#E9C9C4" stroke-width="1.5" stroke-dasharray="5 8"/>
+  <path d="M0 264C168 221 303 288 444 263C573 240 649 185 769 204" stroke="#E8CBC6" stroke-width="2"/>
+  <path d="M0 283C170 240 302 307 449 281C576 258 651 204 767 222" stroke="#F2DCD8" stroke-width="2"/>
+  <rect x="64" y="54" width="190" height="31" rx="15.5" fill="#FCE5E2"/>
+  <circle cx="83" cy="69.5" r="5" fill="#D92D38"/>
+  <text x="98" y="74" fill="#9F2029" font-family="Inter,Arial,sans-serif" font-size="12" font-weight="700" letter-spacing="1.7">LINUX  ·  WAYDROID  ·  ADB</text>
+  <text x="62" y="159" fill="#292324" font-family="Inter,Arial,sans-serif" font-size="64" font-weight="750" letter-spacing="-2.4">CoC Bot</text>
+  <text x="66" y="202" fill="#6F6060" font-family="Inter,Arial,sans-serif" font-size="22" font-weight="500">Компьютерное зрение для игрового интерфейса</text>
+  <rect x="64" y="231" width="153" height="36" rx="18" fill="#D92D38"/>
+  <text x="140.5" y="254" text-anchor="middle" fill="#FFFFFF" font-family="Inter,Arial,sans-serif" font-size="13" font-weight="650">Локальная панель</text>
+  <text x="234" y="254" fill="#8C7774" font-family="Inter,Arial,sans-serif" font-size="13" font-weight="600">управление в одной сети</text>
+  <g transform="translate(892 60)">
+    <path d="M92 18L126 41V72L150 88V182H14V88L38 72V41L72 18H92Z" fill="#FFFDFC" stroke="#C12B35" stroke-width="4" stroke-linejoin="round"/>
+    <path d="M32 91H132V171H32V91Z" fill="url(#tower)"/>
+    <path d="M27 87V59H51V75H69V51H94V75H112V59H137V87" fill="#F0444B" stroke="#C12B35" stroke-width="4" stroke-linejoin="round"/>
+    <path d="M64 171V130C64 115 76 103 91 103C106 103 118 115 118 130V171H64Z" fill="#FFF5F2"/>
+    <path d="M78 171V132C78 125 84 119 91 119C98 119 104 125 104 132V171" stroke="#E2B7B1" stroke-width="3"/>
+    <path d="M4 183H160" stroke="#C12B35" stroke-width="5" stroke-linecap="round"/>
+    <circle cx="6" cy="20" r="5" fill="#D92D38"/>
+    <circle cx="154" cy="30" r="4" fill="#D92D38"/>
+    <circle cx="153" cy="151" r="5" fill="#F26B6F"/>
+  </g>
+  <path d="M842 79L849 91L863 93L853 103L855 117L842 111L829 117L831 103L821 93L835 91L842 79Z" fill="#E55A60"/>
+  <path d="M1110 202L1115 211L1125 212L1118 219L1120 229L1110 224L1101 229L1103 219L1096 212L1106 211L1110 202Z" fill="#E55A60"/>
+  <text x="894" y="286" fill="#9C7773" font-family="Inter,Arial,sans-serif" font-size="12" font-weight="650" letter-spacing="2">ЗРЕНИЕ  /  СЦЕНАРИИ  /  КОНТРОЛЬ</text>
+</svg>

@@ -409,6 +409,18 @@ def visible_card_boxes(frame, page, catalog, *, stop_check=None):
 
 
 def read_army(frame, page, catalog, *, stop_check=None):
+    # Some current Home battle captures are uniformly capped at 178, which
+    # hides the xN badge glyphs from read_badge's deliberate V>=185 mask. Only
+    # restore this frame locally after the cap and the independent Home battle
+    # controls (End Battle/Surrender plus Next/timer/damage) are both proven.
+    # This leaves coordinates, raw capture evidence, unverified screens, and
+    # the global badge threshold unchanged.
+    if page == 'battle':
+        from coc_bot.vision.capped_frames import has_exact_cap_178, restore_cap_178
+        if has_exact_cap_178(frame):
+            from coc_bot.vision.battle_menu import battlefield_ready
+            if battlefield_ready(frame, stop_check=stop_check):
+                frame = restore_cap_178(frame)
     cards = []
     h,w = frame.shape[:2]
     for index, box in enumerate(visible_card_boxes(frame,page,catalog,stop_check=stop_check)):

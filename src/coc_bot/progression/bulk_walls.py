@@ -55,7 +55,12 @@ def selection(frame, resource, stop=None):
     from coc_bot.progression.reader import selected_title
     from coc_bot.upgrades.vision import crop,currency,resource_amount
     title=selected_title(frame,(.24,.64,.50,.697),stop)
-    match=re.fullmatch(r'walllevel([0-9il]{1,2})x([0-9il]{1,3})',re.sub(r'[^a-z0-9]','',title.lower()))
+    compact_title=re.sub(r'[^a-z0-9]','',title.lower())
+    # In the starter selection screenshot, the outlined "1)" is read by
+    # Tesseract as "D". Accept that single level glyph only; the later bulk
+    # runner still requires it to agree with the independently read wall row.
+    compact_title=re.sub(r'^wallleveld(?=x)', 'walllevel1', compact_title)
+    match=re.fullmatch(r'walllevel([0-9il]{1,2})x([0-9il]{1,3})',compact_title)
     if not match:return None
     # The outlined numeric 1 is read as I in this exact heading. Count changes
     # and the independently read unit-price multiplication must also agree.

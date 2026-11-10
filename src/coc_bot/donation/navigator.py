@@ -81,13 +81,8 @@ class Navigator:
                     logger.info("ensure_clan_chat: stop requested — aborting")
                     return False
                 frame = self.capture.screenshot()
-                from coc_bot.vision.connection_dialog import recover_connection_error
-                if recover_connection_error(self,frame):
-                    if self._sleep(1):return False
-                    continue
-                from coc_bot.progression.home import recover_home_bonus,recover_home_announcement,recover_free_chest,recover_reward_summary
-                if (recover_home_announcement(self,frame) or recover_reward_summary(self,frame)
-                    or recover_free_chest(self,frame) or recover_home_bonus(self,frame)):
+                from coc_bot.progression.home import recover_known_overlay
+                if recover_known_overlay(self,frame):
                     if self._sleep(.6):return False
                     continue
                 if self.classifier.is_global_chat(frame, allow_ocr=False):
@@ -467,14 +462,6 @@ class Navigator:
         if self._stopping():
             return False
         reload_point = self.classifier.find_reload_game_button(frame)
-        from coc_bot.vision.battle_menu import reward_continue_button
-        reward = reward_continue_button(frame, stop_check=self.stop_check)
-        if self._stopping():
-            return False
-        if reward is not None:
-            logger.info("Resource reward verified — tapping Continue at {}", reward)
-            self.input.tap(*reward, jitter=0)
-            return True
         if reload_point is not None:
             now = time.monotonic()
             self._idle_reload_times = [t for t in self._idle_reload_times if now - t < 120]
@@ -485,31 +472,19 @@ class Navigator:
                 return None  # Let the game finish reloading; never fall back to a corner.
             if self._stopping():
                 return False
+            if self.classifier.find_reload_game_button(self.capture.screenshot())!=reload_point or self._stopping():
+                return False
             logger.info("Anyone there? inactivity dialog — tapping Reload game at ({}, {})", *reload_point)
             self.input.tap(*reload_point, jitter=0)
             self._idle_reload_times.append(now)
             ScreenClassifier.arm_live_replay_watch()
             return True
-        template = self.load_template("popup_dismiss")
-        if template is not None:
-            match = self.matcher.find(frame, template)
-            if match:
-                cx, cy = match.center
-                logger.info("Dismissing popup via template at ({}, {})", cx, cy)
-                self.input.tap(cx, cy)
-                return
-
-        point = self.config.tap_points.get("dismiss_popup")
-        if point:
-            logger.info("Dismissing popup via tap point ({}, {})", point[0], point[1])
-            self.input.tap(point[0], point[1])
-            return
-
-        h, w = frame.shape[:2]
-        # Top-right corner — outside the blue Star Bonus / news card.
-        tx, ty = int(w * 0.96), int(h * 0.05)
-        logger.info("Dismissing popup — tap corner ({}, {})", tx, ty)
-        self.input.tap(tx, ty)
+        from coc_bot.progression.home import recover_known_overlay
+        if recover_known_overlay(self,frame):return True
+        from coc_bot.runtime.verification import save_frame,record_failure
+        evidence=save_frame(self.config,'unknown-overlay',frame)
+        record_failure(self.config,'overlay.unknown','Неизвестное окно блокирует работу; автоматические нажатия остановлены',evidence=evidence)
+        return False
 
     def _chat_region_roi(self, region: str) -> list[float] | None:
         """

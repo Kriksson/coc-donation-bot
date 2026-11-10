@@ -11,6 +11,7 @@ import numpy as np
 
 from coc_bot.adb.client import AdbStopped
 from coc_bot.builder_base.runner import BuilderBaseRunner, pending
+from coc_bot.builder_base.frames import normalize_builder_frame
 from coc_bot.builder_base.upgrades import eligibility
 from coc_bot.builder_base.vision import BuilderReader
 from coc_bot.upgrades.vision import Candidate
@@ -18,6 +19,56 @@ from coc_bot.runtime.screenshot_retention import RetentionPolicy, prune_attack_d
 
 
 class BuilderVisionTests(unittest.TestCase):
+    def test_live_star_laboratory_confirmation_ocr_variant_keeps_price_and_resource_checks(self):
+        frame=cv2.imread(str(Path(__file__).parent/'fixtures/builder_base/lab-level-five-confirm-native.png'))
+        reader=BuilderReader();candidate=Candidate('Star Laboratory',700_000,'elixir',(1,1))
+        result=reader.confirmation(frame,candidate)
+        self.assertIsNotNone(result)
+        self.assertEqual((result['point'],result['name'],result['cost'],result['currency']),
+                         ((round(frame.shape[1]*.504),round(frame.shape[0]*.875)),
+                          'Star Laboratory',700_000,'elixir'))
+        self.assertIsNone(reader.confirmation(frame,Candidate('Star Laboratory',70_000,'elixir',(1,1))))
+        self.assertIsNone(reader.confirmation(frame,Candidate('Star Laboratory',700_000,'gold',(1,1))))
+
+    def test_native_level_five_dialog_can_close_with_optional_candidate(self):
+        frame=cv2.imread(str(Path(__file__).parent/'fixtures/builder_base/lab-level-five-confirm-native.png'))
+        reader=BuilderReader();candidate=Candidate('Star Laboratory',700000,'elixir',(1,2))
+        point=reader.detail_close(frame,candidate)
+        self.assertIsNotNone(point)
+        self.assertEqual(reader.detail_close(frame),point)
+        missing=frame.copy();missing[20:120,1550:1665]=0
+        self.assertIsNone(reader.detail_close(missing,candidate))
+        missing=frame.copy();missing[30:110,575:1250]=0
+        self.assertIsNone(reader.detail_close(missing,candidate))
+
+    def test_shared_transaction_closes_blocked_builder_dialog_without_payment(self):
+        from coc_bot.upgrades.runner import UpgradeRunner
+        reader=BuilderReader()
+        frame=cv2.imread(str(Path(__file__).parent/'fixtures/builder_base/lab-upgrade-confirm.png'))
+        candidate=Candidate('Star Laboratory',1,'elixir',(100,200))
+        # The actual dialog costs 15,000; selecting a row may never authorize
+        # payment when that independent price check fails.
+        with tempfile.TemporaryDirectory() as folder:
+            runner=UpgradeRunner.__new__(UpgradeRunner)
+            runner.config=SimpleNamespace(upgrade_lab_priority=False)
+            runner.path=Path(folder)/'state.json';runner.stop=None
+            runner.reader=reader;runner.input=MagicMock();runner.capture=MagicMock()
+            runner.capture.screenshot.return_value=frame
+            runner.open_menu=MagicMock(return_value=frame)
+            runner.close=MagicMock();runner.wait=MagicMock(return_value=False)
+            runner.inspect=MagicMock(return_value={'kind':'buildings','availability':(1,1),
+                'balances':{'elixir':100000},'section_complete':True,
+                'recommendations':[candidate.public()|{'skip':None}]})
+            with patch.object(reader,'menu_kind',return_value='buildings'), \
+                 patch.object(reader,'active_names',return_value=[]):
+                result=runner.run('buildings',execute=True)
+            self.assertEqual(result['status'],'blocked')
+            self.assertFalse(runner.path.exists())
+            self.assertEqual(runner.input.tap.call_count,2)
+            self.assertEqual(runner.input.tap.call_args.args,reader.detail_close(frame,candidate))
+            runner.close.assert_called_once_with()
+        self.assertIsNone(reader.detail_close(np.zeros_like(frame),candidate))
+
     @unittest.skipUnless(shutil.which('tesseract'),'OCR executable is required')
     def test_lab_confirmation_uses_native_title_without_guessing_name_or_price(self):
         reader=BuilderReader()
@@ -82,6 +133,126 @@ class BuilderVisionTests(unittest.TestCase):
         frame[400:510,530:630]=0
         self.assertFalse(reader.supported_army(frame))
 
+    def test_baby_dragon_preflight_requires_four_single_camps_and_battle_machine(self):
+        reader=BuilderReader()
+        frame=cv2.imread(str(Path(__file__).parent/'fixtures/builder_base/army-baby-dragon-menu.png'))
+        self.assertEqual(reader.supported_army_kind(frame),'baby_dragon')
+        self.assertTrue(reader.attack_menu(frame))
+        # Losing any one camp, its x1 marker, or the hero card invalidates the
+        # exact inspected composition; a dim transition also cannot pass.
+        for box in ((435,421,545,523),(548,421,657,523),(660,421,770,523),
+                    (772,421,883,523),(304,410,432,525)):
+            changed=frame.copy();x0,y0,x1,y1=box;changed[y0:y1,x0:x1]=0
+            self.assertIsNone(reader.supported_army_kind(changed),box)
+        self.assertIsNone(reader.supported_army_kind((frame*.5).astype(np.uint8)))
+
+    def test_baby_dragon_battle_cards_need_current_troop_art(self):
+        reader=BuilderReader();frame=self.frame(17)
+        # This is a verified Battle Machine plus Night Witch attack. The Baby
+        # Dragon menu receipt cannot relabel those troop pictures by slot.
+        cards=reader.cards(frame,army='baby_dragon')
+        self.assertEqual([c['unit'] for c in cards],['battle_machine'])
+        self.assertEqual(reader.cards(frame,army='unknown'),[])
+        self.assertTrue(reader.battle_army_ready('night_witch'))
+
+    def test_baby_dragon_cards_use_live_art_and_missing_ability_stays_unauthorized(self):
+        raw=cv2.imread(str(Path(__file__).parent/'fixtures/builder_base/battle-baby-dragon-predeploy-capped.png'))
+        frame=normalize_builder_frame(raw)
+        reader=BuilderReader()
+        cards=reader.cards(frame,army='baby_dragon')
+        self.assertEqual([(c['slot'],c['unit']) for c in cards],
+                         [(0,'battle_machine'),(1,'baby_dragon'),(2,'baby_dragon'),
+                          (3,'baby_dragon'),(4,'baby_dragon')])
+        self.assertFalse(any(c['deployed'] for c in cards))
+        self.assertFalse(any(c['ability_ready'] for c in cards))
+        self.assertTrue(reader.battle_army_ready('baby_dragon'))
+        self.assertFalse((Path(__file__).parents[1]/'src/coc_bot/builder_base/assets/baby_dragon_ability_ready.png').exists())
+
+        # A Night Witch control cannot be relabeled from the menu army receipt.
+        control=reader.cards(normalize_builder_frame(self.frame(17)),army='baby_dragon')
+        self.assertEqual([c['unit'] for c in control],['battle_machine'])
+        self.assertFalse(any(c['unit']=='baby_dragon' for c in control))
+
+        # Masking one portrait removes exactly that card while other live cards remain.
+        masked=frame.copy();masked[934:1036, round(frame.shape[1]*.249):round(frame.shape[1]*.290)]=0
+        self.assertEqual([c['slot'] for c in reader.cards(masked,army='baby_dragon')],[0,1,3,4])
+
+        # The troop template is head-only: level digits and the lower card/ability area
+        # may change without affecting troop identity.
+        changing_badge=frame.copy()
+        x0,x1=round(frame.shape[1]*.155),round(frame.shape[1]*.222)
+        changing_badge[round(frame.shape[0]*.92):round(frame.shape[0]*.99),x0:x1]=0
+        self.assertEqual([c['slot'] for c in reader.cards(changing_badge,army='baby_dragon')],
+                         [0,1,2,3,4])
+
+        # Empty card slots are rejected even while the native battle HUD remains.
+        empty=frame.copy();empty[round(frame.shape[0]*.80):]=0
+        self.assertEqual(reader.cards(empty,army='baby_dragon'),[])
+
+        # Readiness needs troop art, but never requires or invents ability art.
+        with tempfile.TemporaryDirectory() as directory:
+            assets=Path(directory)
+            (assets/'baby_dragon.png').write_bytes((Path(__file__).parents[1]/'src/coc_bot/builder_base/assets/baby_dragon.png').read_bytes())
+            with patch('coc_bot.builder_base.vision.ASSETS',assets):
+                self.assertTrue(BuilderReader().battle_army_ready('baby_dragon'))
+                (assets/'baby_dragon.png').unlink()
+                self.assertFalse(BuilderReader().battle_army_ready('baby_dragon'))
+
+    def test_deployed_baby_dragon_cards_keep_face_and_green_health_receipts(self):
+        reader=BuilderReader()
+        expected=((0,0,0,0),(1,0,0,0),(1,1,0,0),(1,1,1,0),(1,1,1,1))
+        for deployed_count, states in enumerate(expected):
+            with self.subTest(deployed=deployed_count):
+                frame=cv2.imread(str(Path(__file__).parent/'fixtures/builder_base'/
+                                     f'battle-baby-dragon-deployed-{deployed_count:02}.png'))
+                cards=reader.cards(frame,army='baby_dragon')
+                dragon_cards={c['slot']:c for c in cards if c['unit']=='baby_dragon'}
+                self.assertEqual(sorted(dragon_cards),[1,2,3,4])
+                for slot,state in zip((1,2,3,4),states):
+                    self.assertEqual(dragon_cards[slot]['deployed'],bool(state),slot)
+                self.assertFalse(any(c['ability_ready'] for c in dragon_cards.values()))
+
+        deployed=cv2.imread(str(Path(__file__).parent/'fixtures/builder_base/'
+                                'battle-baby-dragon-deployed-04.png'))
+        h,w=deployed.shape[:2]
+        for slot,cx in zip((1,2,3,4),(.189,.268,.347,.426)):
+            with self.subTest(erased_portrait_slot=slot):
+                masked=deployed.copy();x=round(w*cx)
+                # Preserve raised-number and health bars while erasing the
+                # actual face region: colored UI alone must never identify a troop.
+                masked[round(h*.88):round(h*.97),x-round(w*.025):x+round(w*.025)]=0
+                cards=reader.cards(masked,army='baby_dragon')
+                self.assertNotIn(slot,[c['slot'] for c in cards if c['unit']=='baby_dragon'])
+
+        # Flat synthetic blue/green bands on a different troop-art control do
+        # not manufacture Baby Dragon identities without a matching face.
+        control=cv2.imread(str(Path(__file__).parent/'fixtures/builder_base/controls-17.png'))
+        h,w=control.shape[:2]
+        for cx in (.189,.268,.347,.426):
+            cv2.rectangle(control,(round(w*(cx-.01)),round(h*.796)),
+                          (round(w*(cx+.025)),round(h*.822)),(255,0,0),-1)
+            cv2.rectangle(control,(round(w*(cx-.025)),round(h*.831)),
+                          (round(w*(cx+.025)),round(h*.858)),(0,255,0),-1)
+        self.assertFalse(any(c['unit']=='baby_dragon' for c in reader.cards(control,army='baby_dragon')))
+
+    def test_builder_deployment_points_follow_observed_outer_red_boundary(self):
+        from coc_bot.builder_base.runner import deployment_points
+        raw=cv2.imread(str(Path(__file__).parent/'fixtures/builder_base/battle-baby-dragon-predeploy-capped.png'))
+        frame=normalize_builder_frame(raw)
+        points=deployment_points(frame)
+        self.assertGreaterEqual(len(points),4)
+        self.assertTrue(all(25 < x < 300 and 270 < y < 450 for x,y in points))
+        self.assertLess(abs(points[0][0]-82),8)
+        self.assertLess(abs(points[0][1]-427),8)
+
+        # No boundary or battlefield means the observed-edge path authorizes nothing.
+        empty=np.zeros_like(frame)
+        self.assertEqual(deployment_points(empty),[])
+        control=cv2.imread(str(Path(__file__).parent/'fixtures/builder_base/controls-17.png'))
+        self.assertEqual(deployment_points(normalize_builder_frame(control)),[])
+        result=cv2.imread(str(Path(__file__).parent/'fixtures/builder_base/result-capped.png'))
+        self.assertEqual(deployment_points(normalize_builder_frame(result)),[])
+
     def test_reward_requires_both_headings_and_button(self):
         reader=BuilderReader();frame=self.frame(28)
         self.assertIsNotNone(reader.reward_button(frame))
@@ -107,14 +278,31 @@ class BuilderVisionTests(unittest.TestCase):
         self.assertTrue(reader.home(frame))
         self.assertFalse(reader.home((frame*.5).astype(np.uint8)))
 
+    def test_current_dim_builder_hud_is_distinct_from_home_and_modal_screens(self):
+        reader=BuilderReader()
+        root=Path(__file__).parent/'fixtures'
+        builder=cv2.imread(str(root/'builder_base/home-dark-scene.png'))
+        self.assertTrue(reader.home(builder))
+        self.assertFalse(reader.home((builder*.5).astype(np.uint8)))
+
+        for path in (root/'progression/home-preview-red-roof.png',
+                     root/'progression/laboratory-confirmation.png',
+                     root/'builder_base/lab-upgrade-confirm.png'):
+            with self.subTest(screen=path.name):
+                self.assertFalse(reader.home(cv2.imread(str(path))))
+
     @unittest.skipUnless(shutil.which('tesseract'), 'OCR executable is required')
     def test_gold_confirmation_requires_matching_price_name_and_resource(self):
         reader=BuilderReader();frame=self.frame(8)
         candidate=Candidate('Elixir Collector',5000,'gold',(1,2))
-        self.assertIsNotNone(reader.confirmation(frame,candidate))
+        # The saved title template must rescue this stylized heading when OCR
+        # misses it, while amount and currency remain independently checked.
+        with patch.object(reader,'white_text',return_value=''):
+            self.assertIsNotNone(reader.confirmation(frame,candidate))
         for name,price,currency in [('Elixir Collector',50000,'gold'),('Gold Mine',5000,'gold'),
                                      ('Elixir Collector',5000,'gems')]:
-            self.assertIsNone(reader.confirmation(frame,Candidate(name,price,currency,(1,2))))
+            with patch.object(reader,'white_text',return_value=''):
+                self.assertIsNone(reader.confirmation(frame,Candidate(name,price,currency,(1,2))))
 
     @unittest.skipUnless(shutil.which('tesseract'), 'OCR executable is required')
     def test_early_barracks_confirmation_requires_elixir_price_and_name(self):
@@ -190,7 +378,7 @@ class BuilderSafetyTests(unittest.TestCase):
 
     def test_stop_after_screenshot_prevents_next_tap(self):
         stopped=[False];r=self.runner(lambda:stopped[0])
-        r.capture.screenshot.side_effect=lambda:stopped.__setitem__(0,True)
+        r.capture.capture.screenshot.side_effect=lambda:stopped.__setitem__(0,True)
         with self.assertRaises(AdbStopped):r.frame()
         with self.assertRaises(AdbStopped):r.tap((1,2))
         r.input.tap.assert_not_called()
@@ -198,10 +386,10 @@ class BuilderSafetyTests(unittest.TestCase):
     def test_practice_never_enters_or_spends(self):
         self.config.dry_run=True;r=self.runner()
         self.assertEqual(r.run()['status'],'practice_skipped')
-        r.capture.screenshot.assert_not_called();r.input.tap.assert_not_called()
+        r.capture.capture.screenshot.assert_not_called();r.input.tap.assert_not_called()
 
     def test_recovery_observes_battle_without_deployment(self):
-        r=self.runner();r.phase('battle');r.reader=MagicMock()
+        r=self.runner();r.phase('battle');r.reader=MagicMock();r.reader.reward_button.return_value=None
         r.reader.battle.return_value=True
         r.watch_battle=MagicMock();r.finish=MagicMock()
         r.recover();r.watch_battle.assert_called_once_with(deploy=False)

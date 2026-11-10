@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+from coc_bot.runtime.battle_history import tracked_battle,note_battle
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -78,6 +79,7 @@ class AttackFarmer:
     def _gs(self, state: GameState, reason: str) -> None:
         from coc_bot.attack.recovery import AttackCheckpoint
         checkpoint = AttackCheckpoint(self.config)
+        if state == GameState.IN_BATTLE:note_battle(entered_battle=True)
         phases = {GameState.ATTACK_MENU: 'attack_menu', GameState.MATCHMAKING: 'matchmaking',
                   GameState.IN_BATTLE: 'opponent', GameState.RETURNING_HOME: 'returning_home'}
         if state in phases:
@@ -95,6 +97,7 @@ class AttackFarmer:
         if self._on_mode is not None:
             self._on_mode(mode)
 
+    @tracked_battle("home")
     def run_one_attack(self) -> FarmResult:
         from dataclasses import replace
         from coc_bot.attack.planned_farmer import context

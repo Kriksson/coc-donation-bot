@@ -64,11 +64,24 @@ class UpdatedMenuTests(unittest.TestCase):
         return frame
 
     def test_requires_multiplayer_and_find_match_not_color_alone(self):
+        from itertools import cycle
         for labels in ((None,None), ('singleplayer','findamatch'), ('multiplayer','jointournament')):
-            with patch('coc_bot.vision.battle_menu.read_short_label', side_effect=labels):
+            with patch('coc_bot.vision.battle_menu.read_short_label', side_effect=cycle(labels)):
                 self.assertIsNone(direct_match_button(self.frame()))
         with patch('coc_bot.vision.battle_menu.read_short_label', side_effect=['multiplayer','findamatch']):
             self.assertEqual(direct_match_button(self.frame()), (318,775))
+
+    def test_side_drawer_button_above_old_crop_keeps_complete_label(self):
+        frame = np.zeros((1080, 1920, 3), np.uint8)
+        cv2.rectangle(frame, (100, 700), (485, 815), (0, 170, 255), -1)
+        # A real-shaped white heading at the top of the CTA must survive cropping.
+        cv2.rectangle(frame, (173, 718), (408, 742), (255, 255, 255), -1)
+        def label(image, **kwargs):
+            if image.ndim == 3:
+                return 'multiplayer'
+            return 'findamatch' if int((image > 0).sum()) > 4500 else None
+        with patch('coc_bot.vision.battle_menu.read_short_label', side_effect=label):
+            self.assertEqual(direct_match_button(frame), (293, 758))
 
     def test_button_coordinates_scale_with_frame(self):
         with patch('coc_bot.vision.battle_menu.read_short_label', side_effect=['multiplayer','findamatch']):

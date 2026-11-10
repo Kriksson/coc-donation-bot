@@ -72,7 +72,7 @@ class BuilderProgressionTests(unittest.TestCase):
         r.reader.research_sorting.side_effect=lambda f:f is sort
         r.reader.menu_kind.side_effect=lambda f:'research' if f is menu else None
         r.research_top=Mock(return_value=menu)
-        r.capture.screenshot.side_effect=[sort,menu,menu]
+        r.capture.capture.screenshot.side_effect=[sort,menu,menu]
         self.assertIs(r.clear_filters(sort),menu)
         r.reader.selected_filter.assert_not_called()
         r.input.tap.assert_called_once_with(round(1853*.40),round(1048*.60),jitter=0)
@@ -80,7 +80,7 @@ class BuilderProgressionTests(unittest.TestCase):
     def test_research_inventory_returns_to_the_top_before_scanning(self):
         r=self.r;r.reader=Mock();r.wait=Mock(return_value=False)
         frame=self.fixture('starter-research-complete.png')
-        r.reader.menu_kind.return_value='research';r.capture.screenshot.return_value=frame
+        r.reader.menu_kind.return_value='research';r.capture.capture.screenshot.return_value=frame
         self.assertIs(r.research_top(frame),frame)
         self.assertEqual(r.input.swipe.call_count,2)
         r.input.tap.assert_not_called()
@@ -118,7 +118,7 @@ class BuilderProgressionTests(unittest.TestCase):
         row={'name':'Army Camp','cost':12000,'currency':'elixir','point':(80,15)}
         placement={'confirm':(9,9),'cancel':(1,1)}
         r.find_row=Mock(return_value=(row,frame));r.eligibility=Mock(return_value=None)
-        r.capture.screenshot.return_value=frame;r.construction_controls=Mock(return_value=placement)
+        r.capture.capture.screenshot.return_value=frame;r.construction_controls=Mock(return_value=placement)
         balances={'gold':None,'elixir':14448}
         r.reader.balances.return_value=balances;r.reader.availability.return_value=(1,1)
         with patch('coc_bot.progression.construction.Construction.locate_space',return_value=placement),\
@@ -212,11 +212,11 @@ class BuilderProgressionTests(unittest.TestCase):
         r.reader.menu_kind.return_value='buildings';r.reader.availability.return_value=(1,1)
         r.reader.balances.return_value={'gold':500,'elixir':500}
         r.reader.rows.side_effect=lambda frame:[hall] if frame[0,0,0]==30 else [other]
-        r.capture.screenshot.side_effect=[first,bottom,bottom,bottom]
+        r.capture.capture.screenshot.side_effect=[first,bottom,bottom,bottom]
         result=r.scan(first)
         self.assertTrue(result['complete']);self.assertTrue(result['hall_verified'])
         # The fourth frame independently confirms the stationary short swipe.
-        self.assertEqual(result['hall'],2);self.assertEqual(r.capture.screenshot.call_count,4)
+        self.assertEqual(result['hall'],2);self.assertEqual(r.capture.capture.screenshot.call_count,4)
         r.input.tap.assert_not_called()
 
     def test_lab_priority_and_new_building_order_apply_to_the_actual_preview(self):
@@ -281,7 +281,7 @@ class BuilderProgressionTests(unittest.TestCase):
         r.reader.active_names.return_value=['sneakyarcher'];r.reader.availability.return_value=(0,1)
         r.reader.balances.return_value={'gold':425018,'elixir':1771169}
         r.reader.rows.return_value=[];r.menu_gems=Mock(return_value=765)
-        r.capture.screenshot.return_value=object()
+        r.capture.capture.screenshot.return_value=object()
         return r
 
     def test_timed_research_requires_two_named_busy_slot_and_exact_payment_observations(self):
@@ -292,12 +292,12 @@ class BuilderProgressionTests(unittest.TestCase):
         self.assertTrue(r._verify_pending(state,'research',object()))
         self.assertNotIn('pending',state);self.assertNotIn('deferred_receipt',state)
         self.assertEqual(state['last_completed']['receipt'],'two_active_research_reads_and_payment')
-        self.assertEqual(r.capture.screenshot.call_count,1);r.input.tap.assert_not_called()
+        self.assertEqual(r.capture.capture.screenshot.call_count,1);r.input.tap.assert_not_called()
 
     def test_timed_research_retains_receipt_on_gem_balance_identity_or_second_frame_changes(self):
         for mode in ('gems','elixir','gold','identity','second'):
             r=self.research_reader();state={'pending':self.timed_research()}
-            first=object();second=r.capture.screenshot.return_value
+            first=object();second=r.capture.capture.screenshot.return_value
             if mode=='gems':r.menu_gems.return_value=764
             if mode=='elixir':r.reader.balances.return_value={'gold':425018,'elixir':1771168}
             if mode=='gold':r.reader.balances.return_value={'gold':None,'elixir':1771169}
@@ -305,6 +305,19 @@ class BuilderProgressionTests(unittest.TestCase):
             if mode=='second':r.reader.availability.side_effect=lambda f,k:(1,1) if f is second else (0,1)
             self.assertFalse(r._verify_pending(state,'research',first),mode)
             self.assertEqual(state['pending'],self.timed_research());r.input.tap.assert_not_called()
+
+    def test_sneaky_research_without_before_payment_evidence_needs_manual_review(self):
+        r=self.research_reader()
+        for pending in (
+            self.pending_research()|{'balances_before':{}},
+            self.pending_research()|{'gems_before':None},
+            self.pending_research()|{'target_level':31},
+        ):
+            with self.subTest(pending=pending):
+                state={'pending':pending}
+                self.assertFalse(r._verify_pending(state,'research',object()))
+                self.assertEqual(state['pending'],pending)
+                r.reader.active_names.assert_not_called()
 
     def test_paid_construction_recovery_only_reads_the_receipt(self):
         r=self.r;r.reader=Mock()
@@ -394,4 +407,26 @@ class BuilderProgressionTests(unittest.TestCase):
                 resource.return_value.balances.return_value=balances
                 self.assertEqual(BuilderConstruction(r).reconcile()['status'],'needs_review')
             self.assertEqual(read(r.path)['pending'],pending)
+        r.input.tap.assert_not_called()
+
+    def test_storage_capacity_bridge_supports_real_reader_finally_and_stop(self):
+        from coc_bot.builder_base.vision import BuilderReader
+        r=self.r;r.reader=Mock();r.reader.home.return_value=True
+        current=np.zeros((100,180,3),np.uint8)
+        r.capture.capture.screenshot.return_value=current
+        actual_reader=BuilderReader()
+        actual_reader.home=Mock(return_value=False)
+        actual_reader.storage_tooltip_visible=Mock(return_value=False)
+        bridges=[]
+        def capacities(bridge):
+            bridges.append(bridge)
+            return actual_reader.storage_capacities(bridge)
+        r.reader.storage_capacities.side_effect=capacities
+        r.open_menu=Mock(return_value=None);r.close=Mock()
+        self.assertEqual(r.run('buildings'),{'status':'stopped'})
+        self.assertEqual(r.capacities,{})
+        self.assertEqual(bridges[0].stop,r.stopped)
+        self.assertFalse(bridges[0].stop())
+        r.stop=lambda:True
+        self.assertTrue(bridges[0].stop())
         r.input.tap.assert_not_called()

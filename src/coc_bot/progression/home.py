@@ -1,5 +1,6 @@
 """Home confirmation for accounts which cannot or should not open clan chat."""
 import time
+import cv2
 import numpy as np
 from loguru import logger
 from coc_bot.stop import interrupted_sleep
@@ -8,18 +9,23 @@ from coc_bot.auxiliary_recovery import AuxiliaryRecovery
 from coc_bot.vision.battle_menu import _white_label
 
 
-def recover_home_bonus(nav,frame):
+def acknowledge_star_bonus(owner, frame, capture, input_ctrl, stopping):
+    """Bounded acknowledgement; callers re-check village identity afterward."""
     from coc_bot.vision.notices import home_star_bonus_button
     point=home_star_bonus_button(frame)
     if point is None:
-        nav.__dict__.pop('_home_bonus_taps',None)
+        owner.__dict__.pop('_home_bonus_taps',None)
         return False
-    if nav.__dict__.get('_home_bonus_taps',0)>=2 or nav._stopping():return False
-    if home_star_bonus_button(nav.capture.screenshot())!=point or nav._stopping():return False
-    nav._home_bonus_taps=nav.__dict__.get('_home_bonus_taps',0)+1
-    logger.info('Home Star Bonus received — acknowledging delivered loot')
-    nav.input.tap(*point,jitter=0)
+    if owner.__dict__.get('_home_bonus_taps',0)>=2 or stopping():return False
+    if home_star_bonus_button(capture.screenshot())!=point or stopping():return False
+    owner._home_bonus_taps=owner.__dict__.get('_home_bonus_taps',0)+1
+    logger.info('Получен звёздный бонус — закрываю подтверждённое окно награды')
+    input_ctrl.tap(*point,jitter=0)
     return True
+
+
+def recover_home_bonus(nav,frame):
+    return acknowledge_star_bonus(nav,frame,nav.capture,nav.input,nav._stopping)
 
 
 def recover_home_announcement(nav,frame):
@@ -104,20 +110,16 @@ def recover_home_overlay(nav, frame):
         nav.input.tap(*result,jitter=0)
         return True
     nav.__dict__.pop('_defense_results_taps',None)
-    welcome=welcome_back_button(frame)
-    if welcome:
-        if welcome_back_button(nav.capture.screenshot())==welcome and not nav._stopping():
-            nav.input.tap(*welcome,jitter=0)
+    for name, detector in (('welcome',welcome_back_button),('event_ended',event_ended_button)):
+        point=detector(frame)
+        key='_notice_'+name+'_taps'
+        if point:
+            if nav.__dict__.get(key,0)>=2 or nav._stopping():return False
+            if detector(nav.capture.screenshot())!=point or nav._stopping():return False
+            nav.__dict__[key]=nav.__dict__.get(key,0)+1
+            nav.input.tap(*point,jitter=0)
             return True
-        return False
-    event=event_ended_button(frame)
-    if event:
-        fresh=nav.capture.screenshot()
-        second=event_ended_button(fresh)
-        if second==event and not nav._stopping():
-            nav.input.tap(*second,jitter=0)
-            return True
-        return False
+        nav.__dict__.pop(key,None)
     tip=battle_menu_tip_button(frame)
     if tip:
         if (battle_menu_tip_button(nav.capture.screenshot())!=tip or nav._stopping()
@@ -138,12 +140,34 @@ def recover_home_overlay(nav, frame):
     reload = nav.classifier.find_reload_game_button(frame)
     if isinstance(reload, tuple) and len(reload)==2:
         return nav._dismiss_popup(frame) is not False
-    title=_white_label(frame,(.30,.075,.70,.155),nav._stopping)
-    okay=_white_label(frame,(.45,.80,.57,.88),nav._stopping)
-    if title=='welcomebackchief' and okay=='okay' and not nav._stopping():
-        nav.input.tap(round(frame.shape[1]*.511),round(frame.shape[0]*.835),jitter=0)
+    def welcome_fallback(image):
+        from coc_bot.upgrades.vision import crop
+        header=cv2.cvtColor(crop(image,(.30,.075,.70,.155)),cv2.COLOR_BGR2HSV)
+        okay=cv2.cvtColor(crop(image,(.45,.80,.57,.88)),cv2.COLOR_BGR2HSV)
+        red=cv2.inRange(header,(0,90,90),(12,255,255))|cv2.inRange(header,(168,90,90),(180,255,255))
+        if red.mean()/255<.35 or cv2.inRange(okay,(30,70,140),(90,255,255)).mean()/255<.35:return None
+        title=_white_label(image,(.30,.075,.70,.155),nav._stopping)
+        label=_white_label(image,(.45,.80,.57,.88),nav._stopping)
+        if title=='welcomebackchief' and label=='okay':
+            return round(image.shape[1]*.511),round(image.shape[0]*.835)
+    point=welcome_fallback(frame)
+    if point is None:nav.__dict__.pop('_notice_welcome_fallback_taps',None)
+    if point and nav.__dict__.get('_notice_welcome_fallback_taps',0)<2 and not nav._stopping():
+        if welcome_fallback(nav.capture.screenshot())!=point or nav._stopping():return False
+        nav._notice_welcome_fallback_taps=nav.__dict__.get('_notice_welcome_fallback_taps',0)+1
+        nav.input.tap(*point,jitter=0)
         return True
     return False
+
+
+def recover_known_overlay(nav, frame):
+    """Shared, non-spending notices in either village and after either battle.
+
+    One action per call; the caller must capture and verify the next screen.
+    Unknown dialogs never receive a generic corner, Back, or configured tap.
+    """
+    if nav is None or not isinstance(frame,np.ndarray):return False
+    return recover_home_overlay(nav,frame)
 
 
 def ensure_home(nav, timeout=15):

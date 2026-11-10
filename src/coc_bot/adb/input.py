@@ -22,6 +22,7 @@ class InputController:
         dry_run: bool = False,
     ) -> None:
         self.client = client
+        self.action_listener = None
         self.jitter_px = jitter_px
         self.delay_ms = delay_ms
         self.dry_run = dry_run
@@ -96,6 +97,7 @@ class InputController:
             logger.info("[DRY-RUN] tap ({}, {})", tx, ty)
         else:
             self.client.run_shell(f"input tap {tx} {ty}")
+            if self.action_listener is not None:self.action_listener()
         self._sleep()
 
     def swipe(self, x1: int, y1: int, x2: int, y2: int, duration_ms: int = 300) -> None:
@@ -107,6 +109,7 @@ class InputController:
             logger.info("[DRY-RUN] swipe ({},{}) -> ({},{}), {}ms", x1, y1, x2, y2, duration_ms)
         else:
             self.client.run_shell(f"input swipe {x1} {y1} {x2} {y2} {duration_ms}")
+            if self.action_listener is not None:self.action_listener()
         self._sleep()
 
     def tap_many(self, points, *, settle_ms: int | None = None) -> None:
@@ -129,6 +132,7 @@ class InputController:
             logger.info('[DRY-RUN] troop batch ({} taps)',len(targets))
         else:
             self.client.run_shell(' && '.join(f'input tap {x} {y}' for x,y in targets))
+            if self.action_listener is not None:self.action_listener()
         if settle_ms is None:
             self._sleep()
         elif interrupted_sleep(settle_ms/1000.,self.client.stop_check):
@@ -140,6 +144,7 @@ class InputController:
             logger.info("[DRY-RUN] keyevent BACK")
         else:
             self.client.run_shell("input keyevent KEYCODE_BACK")
+            if self.action_listener is not None:self.action_listener()
         self._sleep()
 
     def scroll_up(self, cx: int, cy: int, distance: int = 400) -> None:

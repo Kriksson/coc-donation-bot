@@ -10,7 +10,7 @@ import cv2
 import numpy as np
 
 
-@lru_cache(maxsize=4)
+@lru_cache(maxsize=7)
 def _anchor(name: str) -> np.ndarray | None:
     return cv2.imread(str(Path(__file__).with_name("assets") / f"{name}.png"), cv2.IMREAD_GRAYSCALE)
 
@@ -42,9 +42,10 @@ class IdleDialogDetector:
         crop = gray[y0:int(height * .80), x0:1090]
         # Android's larger text layout changes line spacing as well as size.
         # Each inspected variant still requires its own title/message AND action.
-        for suffix in ('', '_large'):
+        for suffix in ('', '_large', '_native'):
             matches = []
-            for name in ("idle_title", "idle_reload"):
+            names=("idle_title","idle_message","idle_reload") if suffix=='_native' else ("idle_title","idle_reload")
+            for name in names:
                 template = _anchor(name+suffix)
                 if template is None or any(a < b for a, b in zip(crop.shape, template.shape)):
                     break
@@ -52,9 +53,12 @@ class IdleDialogDetector:
                 if score < .88:
                     break
                 matches.append((x0 + point[0], y0 + point[1], template.shape[1], template.shape[0]))
-            if len(matches)!=2:continue
+            if len(matches)!=len(names):continue
             tx, ty, tw, th = matches[0]
-            rx, ry, rw, rh = matches[1]
+            rx, ry, rw, rh = matches[-1]
+            if suffix=='_native':
+                mx,my,mw,mh=matches[1]
+                if abs(tx-mx)>15 or not 0<=my-ty-th<=45 or not 15<=ry-my-mh<=95:continue
             if abs(tx - rx) > 15 or not 10 <= ry - (ty + th) <= 120:
                 continue
             # A dimmed underlying dialog must not authorize a reload tap.

@@ -70,6 +70,7 @@ class IdleDialogTests(unittest.TestCase):
     def test_reload_exact_tap_cooldown_retry_limit_and_stop(self):
         nav = Navigator(load_config(), Mock(), Mock())
         frame = dialog_frame()
+        nav.capture.screenshot.return_value=frame
         point = nav.classifier.find_reload_game_button(frame)
         with patch("coc_bot.donation.navigator.time.monotonic") as clock, patch.object(ScreenClassifier, "arm_live_replay_watch") as arm:
             clock.return_value = 100
@@ -105,15 +106,15 @@ class IdleDialogTests(unittest.TestCase):
         capture, inputs = Mock(), Mock()
         nav = Navigator(load_config(), capture, inputs)
         dialog, chat = dialog_frame(), np.zeros((724, 1280, 3), dtype=np.uint8)
-        capture.screenshot.side_effect = [dialog, chat]
-        with patch.object(nav, "classify", side_effect=[ScreenType.POPUP, ScreenType.CLAN_CHAT]), \
+        capture.screenshot.side_effect = [dialog, dialog, chat]
+        with patch.object(nav, "classify", return_value=ScreenType.CLAN_CHAT), \
              patch.object(nav, "_sleep", return_value=False), \
              patch.object(nav, "navigate_to_donation_requests") as navigate, \
              patch.object(nav.classifier, "is_global_chat", return_value=False), \
              patch.object(ScreenClassifier, "arm_live_replay_watch"):
             self.assertTrue(nav.ensure_clan_chat(timeout=5))
         navigate.assert_called_once_with(chat, None)
-        self.assertEqual(capture.screenshot.call_count, 2)
+        self.assertEqual(capture.screenshot.call_count, 3)
         inputs.tap.assert_called_once_with(415, 381, jitter=0)
 
 

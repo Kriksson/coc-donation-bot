@@ -141,11 +141,18 @@ def direct_match_button(frame, *, stop_check=None):
     work; it never authorizes matchmaking on its own. Coordinates scale with
     the frame and are derived from the visible button, not old calibration.
     """
+    return (_direct_match_region(frame, .675, .86, stop_check=stop_check)
+            or _direct_match_region(frame, .55, .90, wide_tab=True, stop_check=stop_check))
+
+
+def _direct_match_region(frame, upper, lower, *, wide_tab=False, stop_check=None):
     h, w = frame.shape[:2]
-    x0, y0 = int(w*.035), int(h*.675)
+    # The current side drawer can place the CTA higher than the older cards.
+    # Include its complete border/text instead of clipping the top of the label.
+    x0, y0 = int(w*.035), int(h*upper)
     # Starter accounts use a wider left card. Keep the full Find a Match text
     # inside this crop while excluding the separate ranked card to its right.
-    crop = frame[y0:int(h*.86), x0:int(w*.41)]
+    crop = frame[y0:int(h*lower), x0:int(w*.41)]
     if not crop.size:
         return None
     hsv = cv2.cvtColor(crop, cv2.COLOR_BGR2HSV)
@@ -158,7 +165,13 @@ def direct_match_button(frame, *, stop_check=None):
             continue
         tab = frame[int(h*.045):int(h*.105), int(w*.073):int(w*.205)]
         if "multiplayer" not in (read_short_label(tab, stop_check=stop_check) or ""):
-            return None
+            if not wide_tab:
+                return None
+            # Preserve the tight crop for older menus; the side drawer's label
+            # can begin slightly further left.
+            tab = frame[int(h*.02):int(h*.12), int(w*.045):int(w*.22)]
+            if "multiplayer" not in (read_short_label(tab, stop_check=stop_check) or ""):
+                return None
         label = crop[y+int(height*.12):y+int(height*.55), x:x+width]
         # The gold fill is bright enough to defeat the old white-on-green OCR
         # preprocessing. Isolate low-saturation white lettering first.

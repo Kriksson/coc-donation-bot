@@ -330,6 +330,8 @@ class VerifiedExecutor:
                     self.deployed_heroes.add(unit_id)
                 self._deployment_observation=(unit_id,after_frame,after,time.monotonic())
                 self.note('deployment_verified',unit_id=unit_id,quantity_after=after.quantity)
+                from coc_bot.runtime.battle_history import note_deployment
+                note_deployment(unit_id,points=[target],frame=after_frame)
                 return
         raise ValueError('No verified deployment change for '+unit_id+'; remaining taps stopped')
 
@@ -425,6 +427,8 @@ class VerifiedExecutor:
                 self.result.uncertain_tap=False;self.result.verified_taps+=len(points)
                 self.result.first_deploy_at=self.result.first_deploy_at or sent_at
                 self.note('deployment_verified',unit_id=unit_id,quantity_after=after.quantity,batch_size=len(points))
+                from coc_bot.runtime.battle_history import note_deployment
+                note_deployment(unit_id,len(points),points=targets,frame=after_frame)
                 self._deployment_observation=(unit_id,after_frame,after,time.monotonic())
                 if remainder:self.deploy_batch(unit_id,remainder,spam=True)
                 return

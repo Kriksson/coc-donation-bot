@@ -57,12 +57,22 @@ class VisitTests(unittest.TestCase):
         self.config=SimpleNamespace(data_dir=Path(self.temp.name),account_tag='#PYLQG')
         self.now=[1000];self.visit=Visit(self.config,lambda:self.now[0])
 
-    def test_refill_can_span_more_than_three_minutes_and_restarts(self):
-        for _ in range(5):
-            self.visit.finish_step('farm',repeat=True);self.now[0]+=240
-            self.visit=Visit(self.config,lambda:self.now[0])
-            self.assertEqual(self.visit.order(),('farm',))
-        self.visit.finish_step('farm');self.assertEqual(self.visit.order(),('requests',))
+    def test_two_refill_turns_yield_without_losing_the_rest_of_the_visit(self):
+        self.visit.finish_step('farm',repeat=True);self.now[0]+=240
+        self.visit=Visit(self.config,lambda:self.now[0])
+        self.assertEqual(self.visit.order(),('farm',))
+        self.visit.finish_step('farm',repeat=True)
+        self.assertEqual(self.visit.order(),('requests',))
+        self.assertEqual(self.visit.load()['outcomes']['farm']['status'],'yielded')
+        for name in ('requests','upgrades'):self.visit.finish_step(name)
+        self.visit.finish_step('builder_base',repeat=True)
+        self.assertEqual(self.visit.order(),('builder_base',))
+        self.visit.finish_step('builder_base',repeat=True)
+        self.assertEqual(self.visit.order(),('layouts',))
+        self.visit.finish_step('layouts')
+        self.now[0]+=301
+        self.assertEqual(self.visit.order(),('farm',))
+        self.assertEqual(self.visit.load().get('bursts',{}),{})
 
     def test_farm_first_keeps_the_rest_of_the_saved_checklist(self):
         self.config.upgrade_buildings_enabled = True
@@ -71,6 +81,77 @@ class VisitTests(unittest.TestCase):
         for step in ('farm', 'requests'):
             self.visit.finish_step(step)
         self.assertEqual(self.visit.order(farm_first=True), ('upgrades',))
+
+    def test_ordinary_upgrade_step_is_skipped_after_same_visits_maintenance_check(self):
+        self.config.upgrade_buildings_enabled = True
+        self.visit.finish_step('upgrades')
+        for step in ('farm', 'requests'):
+            self.visit.finish_step(step)
+        self.assertEqual(self.visit.order(), ('upgrades',))
+
+        from coc_bot.bot import DonationBot
+        bot=DonationBot.__new__(DonationBot)
+        bot._stop_requested=False;bot._farm_requested=False;bot._state='scan_chat'
+        bot._visit=self.visit;bot._visit_chat_pending=False
+        bot.config=SimpleNamespace(data_dir=self.config.data_dir,donation_enabled=False)
+        bot.should_stop=lambda:False;bot._settings_stop_ready=lambda:False
+        bot._check_watchdog=Mock();bot._maybe_anti_idle=Mock();bot.tracker=Mock()
+        bot.capture=Mock();bot.nav_input=Mock();bot.navigator=Mock()
+        bot._maybe_request_reinforcements=Mock(return_value=False)
+        bot._maybe_run_upgrades=Mock(return_value=True)
+        bot._maybe_run_farm=Mock(return_value=False)
+        bot._maybe_run_builder_base=Mock(return_value=False)
+        bot._maybe_run_layouts=Mock(return_value=False)
+        with patch('coc_bot.attack.recovery.pending',return_value=None), \
+             patch('coc_bot.builder_base.runner.pending',return_value=None), \
+             patch('coc_bot.upgrades.runner.UpgradeRunner.state',return_value={}):
+            bot._loop_tick()
+
+        bot._maybe_run_upgrades.assert_not_called()
+        self.assertEqual(self.visit.load()['step'],3)
+
+    def test_partial_maintenance_is_not_treated_as_complete(self):
+        self.config.upgrade_buildings_enabled = True
+        self.visit.finish_step('upgrades',repeat=True,reason='more categories remain')
+        state=self.visit.load()
+        self.assertFalse(state['maintenance_complete'])
+        self.assertNotIn('maintenance_checked',state)
+        self.assertEqual(self.visit.order(),('upgrades',))
+
+    def test_retrying_maintenance_defers_the_later_check_until_its_deadline(self):
+        self.config.upgrade_buildings_enabled = True
+        self.visit.finish_step('upgrades',reason='resources unreadable',retry_at=1200)
+        self.assertFalse(self.visit.load()['maintenance_complete'])
+        for step in ('farm','requests'):
+            self.visit.finish_step(step)
+        self.assertEqual(self.visit.order(),('upgrades',))
+        self.assertEqual(self.visit.deferred('upgrades')['retry_at'],1200)
+        self.now[0]=1200
+        self.assertIsNone(self.visit.deferred('upgrades'))
+
+    def test_pending_upgrade_payment_overrides_same_visit_maintenance_skip(self):
+        self.config.upgrade_buildings_enabled = True
+        self.visit.finish_step('upgrades')
+        for step in ('farm', 'requests'):
+            self.visit.finish_step(step)
+        from coc_bot.bot import DonationBot
+        bot=DonationBot.__new__(DonationBot)
+        bot._stop_requested=False;bot._farm_requested=False;bot._state='scan_chat'
+        bot._visit=self.visit;bot._visit_chat_pending=False
+        bot.config=SimpleNamespace(data_dir=self.config.data_dir,donation_enabled=False)
+        bot.should_stop=lambda:False;bot._settings_stop_ready=lambda:False
+        bot._check_watchdog=Mock();bot._maybe_anti_idle=Mock();bot.tracker=Mock()
+        bot.capture=Mock();bot.nav_input=Mock();bot.navigator=Mock()
+        bot._maybe_request_reinforcements=Mock(return_value=False)
+        bot._maybe_run_upgrades=Mock(return_value=True)
+        pending={'kind':'buildings','phase':'confirming'}
+        with patch('coc_bot.attack.recovery.pending',return_value=None), \
+             patch('coc_bot.builder_base.runner.pending',return_value=None), \
+             patch('coc_bot.upgrades.runner.UpgradeRunner.state',return_value={'pending':pending}):
+            bot._loop_tick()
+
+        bot._maybe_run_upgrades.assert_called_once()
+        self.assertEqual(self.visit.load()['step'],2)
 
     def test_full_checklist_and_disabled_steps_finish_before_visit_ends(self):
         for step in STEPS:
@@ -291,6 +372,19 @@ class BulkWallTests(unittest.TestCase):
         value=selection(frame,'gold')
         self.assertEqual((value['level'],value['count'],value['price'],value['red']),(1,5,5000,True))
         self.assertIsNotNone(value['minus'])
+
+    def test_only_exact_merged_one_parenthesis_ocr_is_recovered_as_level_one(self):
+        import cv2
+        from coc_bot.progression.bulk_walls import selection
+        frame=cv2.imread(str(Path(__file__).parent/'fixtures/resource_visits/wall-starter-red-five.png'))
+        with patch('coc_bot.progression.reader.selected_title',return_value='Wall (Level Dx 5'):
+            self.assertEqual(selection(frame,'gold')['level'],1)
+        for title in ('Wall (Level x 5','Wall (Level D1x 5','Wall (Level D3x 5','Wall (Level 1Dx 5'):
+            with self.subTest(title=title), \
+                 patch('coc_bot.progression.reader.selected_title',return_value=title):
+                self.assertIsNone(selection(frame,'gold'))
+        with patch('coc_bot.progression.reader.selected_title',return_value='Wall (Level 2x 5'):
+            self.assertEqual(selection(frame,'gold')['level'],2)
 
     def test_conflicting_red_masks_reject_price(self):
         import cv2

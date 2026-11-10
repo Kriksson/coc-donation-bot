@@ -71,6 +71,9 @@ def watch(r, *, deploy):
         frame=r.frame();button=r.reader.result_button(frame)
         from coc_bot.builder_base.tutorials import recover
         if recover(r,frame):continue
+        from coc_bot.progression.home import recover_known_overlay
+        if recover_known_overlay(getattr(r,'nav',None),frame):
+            r.wait(.4);continue
         if button and r.reader.result_button(r.frame())==button:
             r.evidence(frame,'starter-results');r.phase('leaving_results');r.tap(button);r.wait(2);continue
         if r.reader.reward_button(frame):
@@ -122,6 +125,8 @@ def watch(r, *, deploy):
         r.tap(points[sent%len(points)]);r.wait(.4)
         after=cards(r.reader,r.frame())
         if len(after)==len(observed) and sum(c['count'] for c in after)==expected-sent-1:
+            from coc_bot.runtime.battle_history import note_deployment
+            note_deployment('raged_barbarian',points=[points[sent%len(points)]],frame=before)
             done+=1;r.record['starter_confirmed']=sent+1;r.phase('battle')
         else:
             r.evidence(r.frame(),'starter-count-unverified')

@@ -53,6 +53,7 @@ class ScreenCapture:
     def __init__(self, client: AdbClient, max_retries: int = 3) -> None:
         self.client = client
         self.max_retries = max_retries
+        self.frame_observer = None
         self._deadline = None
         self._last_size: tuple[int, int] | None = None
         # InputControllers kept in sync so taps match screencap pixels.
@@ -133,6 +134,8 @@ class ScreenCapture:
                     if self._preferred_method != method_name:
                         logger.info("Screencap OK via {} ({}x{})", method_name, w, h)
                         self._preferred_method = method_name
+                    if self.frame_observer is not None:
+                        self.frame_observer(frame)
                     publish_frame(self.client.device, frame)
                     recorder.on_frame(frame)  # no-op unless --record
                     return frame

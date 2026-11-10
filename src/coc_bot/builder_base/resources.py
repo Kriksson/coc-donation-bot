@@ -45,8 +45,9 @@ class ResourceReader:
         return values
 
     def cart(self, frame):
-        return bool(self.builder.find(frame, 'cart_title', (.38,.06,.62,.15))
-                    and self.builder.find(frame, 'cart_close', (.81,.055,.87,.15)))
+        return bool((self.builder.find(frame, 'cart_title', (.38,.06,.62,.15))
+                     or self.builder.find(frame, 'cart_title_native', (.38,.06,.62,.15),threshold=.96))
+                    and self.builder.find(frame, 'cart_close', (.81,.055,.87,.15),threshold=.94))
 
     def cart_close(self, frame):
         return self.builder.find(frame, 'cart_close', (.81,.055,.87,.15)) if self.cart(frame) else None
@@ -104,6 +105,13 @@ class ResourceCollector:
                      'gains':{'gold':0,'elixir':0},'views':0}
         self.remaining=16
         self.deadline=time.monotonic()+150
+
+    def clear_overlay(self, frame):
+        from coc_bot.progression.home import recover_known_overlay
+        if (self.r.reader.reward_button(frame)
+                or recover_known_overlay(getattr(self.r,'nav',None),frame)):
+            return self.r.settle_village(self.r.reader.home)
+        return frame
 
     def settled_balances(self):
         previous=None
@@ -165,8 +173,7 @@ class ResourceCollector:
                 self.report['status']='bounded_stop'
                 return
             frame=self.r.frame()
-            if self.r.reader.reward_button(frame):
-                frame=self.r.settle_village(self.r.reader.home)
+            frame=self.clear_overlay(frame)
             if self.reader.cart(frame):
                 self.collect_cart();return
             if not self.r.reader.home(frame):
@@ -185,6 +192,7 @@ class ResourceCollector:
             self.remaining-=1
             self.r.tap(match['point']);self.r.wait(.8)
             after=self.r.frame()
+            after=self.clear_overlay(after)
             if self.reader.cart(after):
                 self.collect_cart(before)
             elif self.r.reader.home(after):
@@ -195,8 +203,7 @@ class ResourceCollector:
 
     def pan(self, gesture):
         frame=self.r.frame()
-        if self.r.reader.reward_button(frame):
-            frame=self.r.settle_village(self.r.reader.home)
+        frame=self.clear_overlay(frame)
         if not self.r.reader.home(frame):
             raise ValueError('Cannot survey resources outside Builder Base home')
         h,w=frame.shape[:2];self.r.check()
@@ -209,8 +216,7 @@ class ResourceCollector:
         if self.r.config.dry_run:
             return {'status':'practice_skipped'}
         self.r.phase('collecting_resources')
-        if self.r.reader.reward_button(self.r.frame()):
-            self.r.settle_village(self.r.reader.home)
+        self.clear_overlay(self.r.frame())
         initial=self.settled_balances()
         if self.reader.cart(self.r.frame()):
             self.collect_cart()

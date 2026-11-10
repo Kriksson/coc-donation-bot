@@ -4,12 +4,17 @@ import math
 from coc_bot.accounts.store import read
 
 
-def resource_status(config):
-    base={'enabled':config.farm_enabled,'start_percent':config.farm_resource_start_percent,
+def resource_status(config, village='home'):
+    builder=village=='builder'
+    if village not in ('home','builder'):raise ValueError('Unknown village')
+    base={'enabled':getattr(config,'builder_base_attacks_enabled',False) if builder else config.farm_enabled,
+          'trigger_mode':'resources' if builder else getattr(config,'farm_trigger_mode','resources'),
+          'interval_seconds':getattr(config,'farm_interval_seconds',1200),
+          'start_percent':config.farm_resource_start_percent,
           'target_percent':config.farm_resource_target_percent,'status':'unchecked',
-          'message':None,'observation':None,'observed_at':None}
+          'message':None,'observation':None,'observed_at':None,'retry_at':None}
     try:
-        saved=read(config.data_dir/'resources/home.json',{})
+        saved=read(config.data_dir/f'resources/{village}.json',{})
         # JSON accepts NaN/Infinity by default; HTTP JSON and the frontend do not.
         json.dumps(saved,allow_nan=False)
         account=getattr(config,'account_tag',None)
@@ -27,6 +32,9 @@ def resource_status(config):
                 values=observation.get(name,{})
                 if not isinstance(values,dict) or any(v is not None and (type(v) is not int or v<0) for v in values.values()):
                     raise ValueError('Invalid resource amounts')
-        return base|{k:saved.get(k,base[k]) for k in ('status','message','observation','observed_at')}
+        result=base|{k:saved.get(k,base[k]) for k in ('status','message','observation','observed_at','retry_at')}
+        if base['trigger_mode']=='interval':
+            result.update(status='interval',message=None)
+        return result
     except (OSError,ValueError,TypeError):
         return base|{'status':'unverified','message':'Saved resource readings are unreadable; farming needs a fresh check'}

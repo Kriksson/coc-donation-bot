@@ -57,6 +57,23 @@ class RuntimeTracker:
     def tick(self) -> None:
         self._flush()
 
+    def farm_interval_due(self, interval_seconds: int, *, now=None) -> bool | None:
+        """Return due status from the last fought attack; None means bad persisted time."""
+        if type(interval_seconds) is not int or not 60 <= interval_seconds <= 86400:
+            raise ValueError('Farm interval must be between 60 and 86400 seconds')
+        last=self.state.last_farm_at
+        if last is None:return True
+        try:
+            moment=datetime.fromisoformat(last)
+            if moment.tzinfo is None:return None
+            current=(now or datetime.now(timezone.utc))
+            if current.tzinfo is None:return None
+            elapsed=(current.astimezone(timezone.utc)-moment.astimezone(timezone.utc)).total_seconds()
+            if elapsed < 0:return None
+        except (TypeError,ValueError,OverflowError):
+            return None
+        return elapsed >= interval_seconds
+
 
     def mark_farm_success(self, *, attack_id=None) -> None:
         """Record that a farm battle was fought (success or post-deploy leave fail)."""

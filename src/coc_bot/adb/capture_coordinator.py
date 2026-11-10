@@ -20,6 +20,18 @@ def set_failure_listener(listener):
         _failure_listener = listener
 
 
+def request_capture_recovery(device):
+    """A verified unusable Android frame must not be masked by valid previews."""
+    with _guard:
+        listener = _failure_listener
+    if listener is not None:
+        try:
+            listener(device)
+        except Exception as exc:
+            from loguru import logger
+            logger.warning('Capture recovery could not be scheduled: {}', exc)
+
+
 def capture_failed(device):
     with _guard:
         _failures[device] = count = _failures.get(device, 0) + 1

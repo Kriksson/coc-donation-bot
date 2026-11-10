@@ -91,7 +91,7 @@ class PlannedLifecycleTests(TestCase):
     def test_uncertain_tap_uses_attempt_time_and_never_replays_plan(self):
         farmer = self.farmer()
         result = ExecutionResult(False, 'Count unreadable', uncertain_tap=True, first_attempt_at=123)
-        with patch('coc_bot.attack.planned_farmer.load_template', return_value=({}, Mock())), \
+        with patch('coc_bot.attack.planned_farmer.load_template', return_value=({}, SimpleNamespace(army=()))), \
                 patch('coc_bot.attack.planned_farmer.remember_camera'), \
                 patch('coc_bot.attack.planned_farmer.restore_camera'), \
                 patch('coc_bot.attack.planned_farmer.learned_catalog'), \

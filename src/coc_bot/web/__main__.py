@@ -9,6 +9,7 @@ from pathlib import Path
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Browser control for the CoC bot")
     parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--lan", action="store_true", help="Разрешить доступ с устройств в локальной Wi-Fi-сети")
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--origin", action="append", help="Exact browser origin, including port")
     parser.add_argument("--set-password", action="store_true")
@@ -40,6 +41,8 @@ def main(argv=None):
         address = ipaddress.ip_address(args.host)
         if not address.is_private or address.is_unspecified or address.is_multicast or address.is_link_local:
             parser.error("Password-free mode must bind to a specific private LAN IP or localhost.")
+    if args.lan and not loopback:
+        parser.error("С --lan оставьте стандартный --host: адрес Wi-Fi определяется автоматически.")
     if not loopback and not args.origin:
         parser.error("LAN access needs an explicit --origin, preferably through an HTTPS reverse proxy.")
     if not 1 <= args.port <= 65535:
@@ -50,14 +53,26 @@ def main(argv=None):
     import uvicorn
     setup_logging(debug=False, log_file=project_root() / "data/bot.log")
     origins = args.origin or [f"http://127.0.0.1:{args.port}", f"http://localhost:{args.port}"]
+    lan_addresses=[]
+    if args.lan:
+        from coc_bot.web.network import discover_lan_addresses
+        lan_addresses=discover_lan_addresses()
+        origins=list(dict.fromkeys([*origins,*(f'http://{address}:{args.port}' for address in lan_addresses)]))
+        for address in lan_addresses:
+            print(f'Панель с телефона в этой сети: http://{address}:{args.port}',flush=True)
     if args.screen_model:
         from coc_bot.vision.screen_model import enable_observer
         enable_observer(args.screen_model)
     # Locks the server, not the Android device; engine jobs retain device leases.
     with DeviceLease("web-server:" + str(project_root())):
-        uvicorn.run(create_app(origins=origins, secure_cookie=args.secure_cookie,
-                              password_required=args.require_password),
-                    host=args.host, port=args.port, workers=1, access_log=False)
+        app=create_app(origins=origins, secure_cookie=args.secure_cookie,
+                       password_required=args.require_password)
+        if args.lan:
+            from coc_bot.web.network import listening_sockets
+            with listening_sockets(['127.0.0.1',*lan_addresses],args.port) as sockets:
+                uvicorn.Server(uvicorn.Config(app,port=args.port,workers=1,access_log=False)).run(sockets=sockets)
+        else:
+            uvicorn.run(app,host=args.host,port=args.port,workers=1,access_log=False)
 
 
 if __name__ == "__main__":

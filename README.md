@@ -1,74 +1,60 @@
 # CoC Bot
 
-> **THIS CAN GET YOUR ACCOUNT PERMANENTLY BANNED.**
-> Supercell prohibits bots and gameplay automation under its
-> [Safe and Fair Play policy](https://supercell.com/en/safe-and-fair-play/).
-> Educational intent and practice mode do not make live use permitted.
-> This project is not affiliated with or endorsed by Supercell.
+<picture><img src="docs/images/coc-bot-banner.svg" alt="CoC Bot — автоматизация, зрение и управление через локальную панель" width="100%"></picture>
 
-CoC Bot is a self-hosted Clash of Clans automation and computer-vision project.
-It runs the game in Waydroid on Linux, reads Android screenshots, and sends
-inputs through ADB. A browser dashboard controls donations, unranked attacks,
-optional upgrades, calibration, and diagnostics.
+<p align="center"><strong>Самостоятельный проект на Python: компьютерное зрение для Clash of Clans и панель управления, доступная с компьютера или телефона в одной локальной сети.</strong></p>
 
-Open the dashboard from another computer or phone on the same network. The game
-and bot stay on the Linux host; ordinary use needs no remote desktop app.
-Live view streams the game into the browser and offers manual control while
-automation is stopped.
+> **Внимание: автоматизация может привести к постоянной блокировке аккаунта.** Supercell запрещает ботов и автоматизацию игрового процесса в своей [политике честной игры](https://supercell.com/en/safe-and-fair-play/). Учебная цель и тренировочный режим не делают использование автоматизации в живой игре разрешённым. Проект не связан с Supercell и не одобрен компанией.
 
-## What it does
+Игра и бот работают на компьютере с Linux в Waydroid. Бот анализирует изображение экрана и отправляет нажатия через ADB. Веб-панель управляет пожертвованиями, атаками без рейтинга, необязательными улучшениями, калибровкой, ресурсами и диагностикой. Её можно открыть с телефона через браузер по Wi-Fi; удалённый рабочий стол для обычного управления не нужен. Трансляция экрана показывает игру в браузере и позволяет временно управлять ею вручную, когда автоматизация остановлена.
 
-- **Donations:** finds Donate buttons in clan chat, distinguishes them from event
-  Trade buttons, and handles specific requests plus optional open/hybrid requests.
-  It verifies elixir mode before donating and supports panels with different
-  troop, spell, and siege capacities.
-- **Unranked attacks:** automatic mass Electro Dragon attacks, editable map-based
-  routines, or the original programmed tap sequence. Automatic/planner attacks
-  map the opponent and verify individual deployments.
-- **Upgrades:** follows the game's Suggested building upgrades and laboratory
-  research, subject to availability, supported names, exclusions, and resource
-  reserves. Pet upgrades use a separate slot and prefer unassigned pets.
-  Previewing and starting an upgrade are separate actions.
-- **Browser controls:** Start/Stop, resource refill status, activity logs,
-  responsive settings, the Harbor interface, guided calibration, and calibration backups.
-- **Builder Base (experimental):** account-visit checks for an equipped
-  six-Night-Witch/Battle-Machine army, resource collection, supported Suggested
-  building upgrades, and Night Witch research. Handles both battle stages,
-  checks results, and returns to clan chat. Collection, attacks, building upgrades,
-  and research have independent switches in Settings; all default to off.
-  See [Builder Base setup and limitations](docs/BUILDER_BASE.md).
-- **Recovery:** records unfinished attack and upgrade actions so a restart can
-  inspect the game instead of blindly repeating them.
-- **Automatic defensive layouts:** optional resource-only obstacle clearing,
-  native layout imports, remaining-inventory placement, and verified activation
-  in a spare Home Village slot. Current support requires a compatible native
-  copy link and default-terrain recognition; TH2/3 have no automatic copy path.
-  See [automatic layouts](docs/AUTOMATIC_LAYOUTS.md).
-- **Development tools:** optional screenshot collection, labeling/export tools,
-  offline checks, and an experimental screen-recognition observer.
+<picture><img src="docs/images/dashboard-preview.png" alt="Веб-панель CoC Bot в изолированном офлайн-предпросмотре" width="100%"></picture>
+<p align="center"><sub>Снимок панели создан в офлайн-предпросмотре: игровой аккаунт и Waydroid не подключены.</sub></p>
 
-This is an actively developed project, tested live on an Ubuntu/Waydroid host
-with LAN browser clients. Recognition targets the English, landscape game
-interface. Different layouts, resolutions, languages, hero skins, and sceneries
-can require calibration or cause an operation to be skipped. The experimental
-learned screen model logs predictions; it does not control taps.
+## Содержание
 
-## Installation
+- [Возможности](#возможности)
+- [Совместимость и ограничения](#совместимость-и-ограничения)
+- [Установка](#установка)
+  - [Linux и браузер](#linux-и-браузер)
+  - [Доступ по локальной сети](#доступ-по-локальной-сети)
+  - [Пакет CasaOS](#пакет-casaos)
+- [Первый запуск](#первый-запуск)
+- [Повседневное управление](#повседневное-управление)
+- [Атаки](#атаки)
+- [Необязательные улучшения](#необязательные-улучшения)
+- [Восстановление и резервные копии](#восстановление-и-резервные-копии)
+- [Обновление](#обновление)
+- [Решение проблем](#решение-проблем)
+- [Разработка и проверки](#разработка-и-проверки)
+- [Лицензия и вклад в проект](#лицензия-и-вклад-в-проект)
 
-Use the **Linux browser installation** if Waydroid and Clash already work on
-your computer. Use the **CasaOS package** to let CasaOS manage the app and a host
-helper start Waydroid and the game. Both keep Android on the Linux host; the
-browser displays video from that instance.
+## Возможности
 
-### Linux browser installation
+- **Пожертвования:** поиск кнопок «Пожертвовать» в клановом чате, проверка запроса и режима эликсира, поддержка конкретных и необязательных открытых или смешанных запросов. Учтены панели с разной вместимостью войск, заклинаний и осадных машин.
+- **Атаки без рейтинга:** автоматические атаки Электродраконами, редактируемые сценарии с картой боя или последовательность нажатий. Автоматический режим и планировщик строят карту противника и проверяют действия размещения.
+- **Улучшения:** обработка рекомендаций игры для зданий и лаборатории с учётом доступности, поддерживаемых названий, исключений и резерва ресурсов. Улучшения питомцев используют отдельную ячейку и по умолчанию выбирают незанятых питомцев. Просмотр и запуск улучшения — разные действия.
+- **Веб-панель:** запуск и остановка, состояние пополнения ресурсов, журнал событий, адаптивные настройки, интерфейс Harbor, пошаговая калибровка и резервные копии калибровки.
+- **Деревня строителя (экспериментально):** сбор и учёт золота и эликсира, пополнение ресурсов поддерживаемыми атаками, проверка улучшений зданий и исследований войск. Поддерживаются шесть Ночных ведьм с Боевой машиной или четыре одиночных Дракончика в разных лагерях. Бот проверяет обе стадии боя и экран результата перед возвратом в основную деревню. Сбор, атаки, улучшения и исследования имеют отдельные выключенные по умолчанию переключатели. Подробности — в [руководстве по деревне строителя](docs/BUILDER_BASE.md).
+- **Восстановление:** незавершённые атаки и улучшения записываются, чтобы после перезапуска проверить состояние игры, а не повторять действия вслепую.
+- **Автоматические защитные планировки:** необязательное удаление препятствий ради ресурсов, импорт встроенных планировок, размещение оставшихся предметов и проверенная активация в дополнительном слоте основной деревни. Нужны совместимая встроенная ссылка на копирование и распознавание стандартного ландшафта; для Ратуш 2 и 3 автоматическое копирование не поддерживается. См. [автоматические планировки](docs/AUTOMATIC_LAYOUTS.md).
+- **Инструменты разработки:** необязательный сбор снимков, разметка и экспорт, офлайн-проверки и экспериментальный модуль наблюдения за распознаванием экрана.
 
-You need an Ubuntu/Debian-based Linux computer, working Waydroid and Clash of
-Clans, administrator access to install dependencies, and internet access for
-the initial downloads. Sign into the game yourself before calibration.
+## Совместимость и ограничения
 
-Open Terminal and run:
+Проект активно разрабатывается и проверяется на Linux-хосте с Ubuntu, Waydroid и браузерами в локальной сети. Распознавание рассчитано на англоязычный альбомный интерфейс игры. Другие языки, раскладки, разрешения, облики героев и декорации могут потребовать калибровки или привести к пропуску действия. Экспериментальная обучаемая модель записывает предсказания, но не управляет нажатиями.
 
-```bash
+## Установка
+
+Выберите **установку Linux с браузерной панелью**, если Waydroid и Clash of Clans уже работают на компьютере. Выберите **пакет CasaOS**, если нужно поручить CasaOS управление приложением, а вспомогательному сервису на хосте — запуск Waydroid и игры. В обоих вариантах Android остаётся на компьютере с Linux, а браузер показывает изображение с него.
+
+### Linux и браузер
+
+Понадобится компьютер с Linux на основе Ubuntu или Debian, работающие Waydroid и Clash of Clans, права администратора для установки зависимостей и интернет для первоначальной загрузки. Перед калибровкой самостоятельно войдите в игру.
+
+Откройте терминал и выполните:
+
+~~~bash
 sudo apt update
 sudo apt install git
 mkdir -p ~/Projects
@@ -80,357 +66,187 @@ source .venv/bin/activate
 python -m pip install -e '.[web,web-live]'
 python scripts/setup_live_view.py
 python -m coc_bot.web
-```
+~~~
 
-Setup installs system packages, creates the private `.venv` Python environment,
-and downloads recognition dependencies and unit icons. This can take several
-minutes. This script does **not** install Waydroid or Clash; managed host setup
-belongs to the CasaOS route below.
+Установка добавит системные пакеты, создаст приватное Python-окружение <code>.venv</code> и загрузит зависимости распознавания и значки войск. Это может занять несколько минут. Скрипт **не устанавливает** Waydroid или Clash; настройка управляемого хоста описана ниже в разделе CasaOS.
 
-The Live view installer downloads a pinned, checksum-verified scrcpy Android
-server. Automatic/planner camera gestures need that component too, even without
-Live view open. Android root is not required.
+Модуль трансляции загрузит закреплённый по версии Android-сервер scrcpy и проверит его контрольную сумму. Этот компонент нужен и автоматическим атакам с жестами камеры, даже если трансляция не открыта. Права root в Android не требуются.
 
-Open **http://127.0.0.1:8765** on the Linux computer. Leave Terminal running;
-closing the browser tab does not stop the server or bot. To reopen the dashboard
-after stopping its server:
+На компьютере с Linux откройте **http://127.0.0.1:8765**. Не закрывайте терминал: закрытие вкладки браузера не останавливает сервер и бота. Чтобы снова открыть панель после остановки сервера:
 
-```bash
+~~~bash
 cd ~/Projects/coc-donation-bot
 bash scripts/run_web.sh
-```
+~~~
 
-For this installation, start Waydroid and Clash manually before connecting the
-bot. The [browser guide](docs/WEB_UI.md) covers additional launch options.
+Перед подключением бота вручную запустите Waydroid и Clash. Дополнительные варианты запуска описаны в [руководстве по браузерной панели](docs/WEB_UI.md).
 
-### Access from another device
+### Доступ по локальной сети
 
-Find the Linux computer's local IP address in its network settings. Stop the
-local server with Ctrl+C, then launch it with your address and matching URL:
+Узнайте локальный IP-адрес компьютера с Linux в настройках сети. Остановите локальный сервер сочетанием Ctrl+C, затем запустите его с этим адресом и соответствующим URL:
 
-```bash
+~~~bash
 source .venv/bin/activate
 python -m coc_bot.web --host YOUR_LINUX_IP --origin http://YOUR_LINUX_IP:8765
-```
+~~~
 
-Replace both occurrences of `YOUR_LINUX_IP`. Open that same URL in the other
-device's browser. Use a specific private network address; password-free startup
-does not accept a wildcard bind address such as `0.0.0.0`.
+Вместо <code>YOUR_LINUX_IP</code> укажите один и тот же IP-адрес в обеих частях команды. Откройте этот URL в браузере телефона или другого устройства, подключённого к той же локальной сети. Используйте конкретный адрес приватной сети: запуск без пароля не разрешает привязку к универсальному адресу <code>0.0.0.0</code>.
 
-**There is no password by default. Anyone who can reach the dashboard can control
-the game and edit its configuration.** Keep access on a trusted network; do not
-expose the port directly to the internet. Optional password protection, SSH
-tunneling, and HTTPS are covered in the
-[browser guide](docs/WEB_UI.md#open-from-another-device).
+**По умолчанию пароль не задан. Любой, кто получит доступ к панели, сможет управлять игрой и менять настройки.** Оставляйте панель только в доверенной сети и не открывайте её порт в интернет. Защита паролем, SSH-туннель и HTTPS описаны в [руководстве по браузерной панели](docs/WEB_UI.md#open-from-another-device).
 
-### CasaOS package
+### Пакет CasaOS
 
-The package runs the browser app in Docker and uses a Linux host helper to manage
-Waydroid. App startup prepares Android, connects ADB, and launches Clash.
-Gameplay automation stays stopped until you press **Start**.
+Пакет запускает браузерное приложение в Docker и использует вспомогательный сервис Linux-хоста для управления Waydroid. При запуске приложение подготавливает Android, подключает ADB и открывает Clash. Игровая автоматизация остаётся остановленной, пока вы не нажмёте **Запустить**.
 
-The initial target is an x86-64 Ubuntu/Debian host with systemd, compatible binder
-support, and working graphics, initially AMD/Intel. CasaOS and Docker must already
-be installed. An isolated VM passed clean-host provisioning, APK installation,
-and unattended headless service recovery after reboot, but Clash still exits
-during startup there. Fresh-game and other hardware combinations still need
-acceptance testing; this is not a universally tested one-click package. See the
-[test record](docs/CASAOS_FRESH_INSTALL_TEST.md) and
-[headless operation guide](docs/CASAOS_PACKAGE.md#headless-operation).
+Начальная конфигурация рассчитана на хост x86-64 с Ubuntu или Debian, systemd, совместимой поддержкой binder и работающей графикой; в первую очередь проверялись системы AMD/Intel. CasaOS и Docker должны быть установлены. В изолированной виртуальной машине проверены настройка чистой системы, установка APK и автоматическое восстановление фонового сервиса после перезагрузки, но Clash завершает работу во время запуска. Новая установка игры и другие конфигурации оборудования ещё требуют приёмочной проверки; пакет нельзя считать универсальным установщиком в один клик. См. [протокол проверки](docs/CASAOS_FRESH_INSTALL_TEST.md) и [руководство по фоновому режиму](docs/CASAOS_PACKAGE.md#headless-operation).
 
-1. Download this repository on the CasaOS host using the clone commands above.
-2. In its project folder, build the local image:
+1. Склонируйте этот репозиторий на хост CasaOS командами выше.
+2. В каталоге проекта соберите локальный образ:
 
-   ```bash
+   ~~~bash
    bash packaging/casaos/build.sh
-   ```
+   ~~~
 
-   The build downloads the public recognition artwork and gesture assets. It
-   fails if required automatic-attack artwork is unavailable; you do not need
-   another user's profile or icon cache. See the [offline image check](docs/CASAOS_PACKAGE.md#build-and-install).
+   При сборке загружаются общедоступные изображения распознавания и ресурсы жестов. Сборка завершится ошибкой, если обязательные изображения для автоматических атак недоступны; профиль или кэш значков другого пользователя не нужен. См. [офлайн-проверку образа](docs/CASAOS_PACKAGE.md#build-and-install).
 
-3. In CasaOS, install a custom app by importing
-   [`packaging/casaos/compose.yaml`](packaging/casaos/compose.yaml).
-4. Review its setup service before installing. It has administrator-level host
-   access to install Waydroid, Android images, display prerequisites, and the
-   helper. The ordinary bot container runs without those privileges.
-5. Open the CasaOS app tile. The default dashboard address is
-   `http://YOUR_LINUX_IP:8767`. Follow its startup status and installation prompts.
-   The first Android startup can take several minutes; keep the status page open.
-6. For a fresh game installation, import your own trusted Clash APK archive,
-   then sign in through **Live view → Take control**. Game APKs and account
-   credentials are not included in the repository or container image.
+3. В CasaOS добавьте пользовательское приложение, импортировав файл [packaging/casaos/compose.yaml](packaging/casaos/compose.yaml).
+4. Перед установкой проверьте сервис настройки хоста. Ему нужны права администратора для установки Waydroid, образов Android, графических компонентов и вспомогательной службы. Обычный контейнер бота работает без этих привилегий.
+5. Откройте плитку приложения CasaOS. Адрес панели по умолчанию: <code>http://YOUR_LINUX_IP:8767</code>. Следуйте статусу запуска и подсказкам установки. Первый запуск Android может занять несколько минут; не закрывайте страницу статуса.
+6. Для новой установки игры импортируйте собственный доверенный архив APK Clash, затем войдите в игру через **Трансляция → Взять управление**. APK игры и данные аккаунта не включены в репозиторий или образ контейнера.
 
-To create an APK archive from an Android instance where Clash is already
-installed, run this on a computer with Python 3, ADB, and access to that instance:
+Чтобы создать архив APK на компьютере, где уже установлена Clash, понадобятся Python 3, ADB и доступ к Android-устройству:
 
-```bash
+~~~bash
 python3 scripts/export_clash_apks.py --device ANDROID_IP:5555 --output clash-apks.zip
-```
+~~~
 
-Replace `ANDROID_IP` with the Android device's address. The archive contains
-installation files, including split APKs, **not** your account or game data.
+Замените <code>ANDROID_IP</code> адресом Android-устройства. Архив содержит установочные файлы, включая разделённые APK, **но не** аккаунт или игровые данные.
 
-For an existing Waydroid installation, configure adoption/import before setup
-rather than creating a competing controller. The
-[CasaOS guide](docs/CASAOS_PACKAGE.md) explains session adoption, profile import,
-compatibility checks, privileges, and startup recovery. A local image build is
-the documented installation route; a published registry release is not assumed.
+Если Waydroid уже установлен, настройте его подключение или импорт **до** установки, чтобы не создавать конкурирующий контроллер. [Руководство CasaOS](docs/CASAOS_PACKAGE.md) описывает подключение существующей сессии, импорт профиля, проверку совместимости, привилегии и восстановление запуска. Документированный способ установки предполагает локальную сборку образа; наличие опубликованной версии в реестре не гарантируется.
 
-## First-time setup
+## Первый запуск
 
-1. **Get the game ready.** Sign in and open your home village. For manual Linux
-   installations, run `waydroid status` to find its IP address. In
-   **Settings → Advanced**, set **ADB device** to that address followed by
-   `:5555`, then save. CasaOS manages its device address during startup.
-2. **Check the connection.** Use **Tools → Device → Check device**. For a manual
-   installation, these Terminal commands also help:
+1. **Подготовьте игру.** Войдите в аккаунт и откройте основную деревню. При ручной установке Linux выполните <code>waydroid status</code>, чтобы узнать IP-адрес устройства. В разделе **Настройки → Дополнительно** задайте **адрес ADB**: адрес с окончанием <code>:5555</code>, затем сохраните. CasaOS настраивает адрес при запуске.
+2. **Проверьте подключение.** Выберите **Инструменты → Устройство → Проверить устройство**. При ручной установке помогут команды терминала:
 
-   ```bash
+   ~~~bash
    adb connect ANDROID_IP:5555
    adb devices
-   ```
+   ~~~
 
-   Replace `ANDROID_IP`. A working connection appears with the word `device`.
-3. **Calibrate the interface.** Stop automation and release manual control.
-   Choose **Setup → Set up missing**. Each part tells you which game screen
-   to open. Capture it, click the requested button or draw its screen area, and
-   save. Select a single part directly when needed; Skip/Cancel preserves its
-   existing calibration. No separate image editor is needed.
-4. **Verify donation resource selection.** Open a real donation request and
-   select elixir. Calibrate both the elixir button position and **Selected elixir
-   indicator**, including the selected button's border/background. Donations
-   are refused if this mode cannot be verified.
-5. **Back up calibration.** In **Library**, choose **Back up calibration**, then
-   **Export** to keep a copy on another device. Restore creates a safety backup
-   before applying a saved calibration.
-6. **Watch the first run.** Press **Start** and observe a real request. Confirm
-   it opens, donation quantities change, and the bot returns to clan chat. Check
-   attack and upgrade flows separately before enabling their schedules.
+   Замените <code>ANDROID_IP</code>. Подключённое устройство должно иметь статус <code>device</code>.
+3. **Откалибруйте интерфейс.** Остановите автоматизацию и завершите ручное управление. Выберите **Настройка → Настроить отсутствующее**. Для каждого элемента панель укажет, какой экран игры открыть. Снимите экран, нажмите запрошенную кнопку или выделите нужную область, затем сохраните. Можно выбрать отдельный элемент напрямую; пропуск или отмена сохраняют прежнюю калибровку. Отдельный редактор изображений не нужен.
+4. **Проверьте выбор ресурса для пожертвований.** Откройте реальный запрос на пожертвование и выберите эликсир. Откалибруйте позицию кнопки эликсира и элемент **Индикатор выбранного эликсира**, включая рамку или фон выбранной кнопки. Если режим нельзя проверить, пожертвование не выполняется.
+5. **Сохраните копию калибровки.** В **Библиотеке** выберите **Создать копию калибровки**, затем нажмите **Экспорт**, чтобы сохранить копию на другом устройстве. Перед восстановлением создаётся резервная копия текущего состояния.
+6. **Наблюдайте за первым запуском.** Нажмите **Запустить** и проследите за реальным запросом. Убедитесь, что бот его открывает, меняет количество войск и возвращается в клановый чат. Отдельно проверьте атаки и улучшения, прежде чем включать их расписание.
 
-Keep Android's resolution/layout consistent with calibration. Resizing the
-browser does not resize Android. After a game UI update, back up the profile and
-recalibrate changed parts.
+Сохраняйте разрешение и раскладку Android такими же, как при калибровке. Изменение размера браузера не меняет размер изображения Android. После обновления игры сохраните профиль и повторно откалибруйте изменившиеся элементы.
 
-## Everyday controls
+## Повседневное управление
 
-- **Overview:** Start, Stop, Farm now, practice mode, resource readings,
-  and one activity log. Live view is available on every page.
-- **Accounts:** save the current village, add another Supercell ID, switch saved
-  accounts, and choose each account's roles. See [Accounts](docs/ACCOUNTS.md).
-- **Settings:** categorized donations, resource refill targets, upgrades,
-  timing presets, and collection limits. Field help opens on demand;
-  Advanced and Dev options retain their existing controls.
-- **Setup:** guided calibration or direct access to one calibration part.
-  Advanced reveals older-UI and fallback controls. The programmed deploy
-  sequence is shown normally only for the sequence attack method.
-- **Library:** separate Calibrations and Screenshots tabs, with backups/profiles,
-  ZIP import/export, rename/delete, and the screenshot collection gallery.
-- **Tools:** device/screen checks, current screenshot, navigation tests,
-  upgrade previews, reports, and game/session controls. **Tools → Attacks** holds
-  opponent mapping, army inspection, custom routines, and supervised execution.
+- **Обзор:** запуск, остановка, кнопка **Начать фарм**, тренировочный режим, показания ресурсов и единый журнал событий. Трансляция игры доступна с любой страницы.
+- **Аккаунты:** сохранение текущей деревни, добавление Supercell ID, переключение между аккаунтами и выбор роли каждого. См. [Аккаунты](docs/ACCOUNTS.md).
+- **Настройки:** категории пожертвований, цели пополнения ресурсов, улучшения, интервалы и лимиты сбора. Подсказки к полям открываются по запросу; разделы **Дополнительно** и **Разработка** сохраняют отдельные настройки.
+- **Настройка:** пошаговая калибровка или переход к отдельному элементу. В разделе **Дополнительно** находятся элементы для старого интерфейса и резервные настройки. Последовательность размещения отображается обычно только для соответствующего метода атаки.
+- **Библиотека:** вкладки калибровок и снимков экрана, резервные копии, профили, импорт и экспорт ZIP-архивов, переименование, удаление и галерея собранных снимков.
+- **Инструменты:** проверка устройства и экрана, текущий снимок, тесты навигации, предварительный просмотр улучшений, отчёты и управление игрой/сессией. В **Инструменты → Атаки** находятся карта противника, просмотр армии, пользовательские сценарии и запуск под наблюдением.
 
-**Stop** interrupts normal operation, standalone attacks, and tools. It leaves
-Clash open and does not finish a battle for you. **Close Waydroid and Clash** is
-a separate Tools action. Closing a browser tab leaves automation running.
+Кнопка **Остановить** прерывает обычную работу, отдельные атаки и инструменты. Clash остаётся открытой, незавершённый бой бот за вас не заканчивает. **Закрыть Waydroid и Clash** — отдельное действие в инструментах. Закрытие вкладки браузера не останавливает автоматизацию.
 
-Settings remain editable while the bot runs. **Save & restart** validates changes,
-waits for the current donation/attack to finish, then restarts with the new settings.
-**Stop** cancels a pending restart. While stopped, **Save** applies settings without
-starting automation. Release manual control before saving.
-The browser uses **Harbor**, a black, cobalt, and brass interface with a local
-abstract wallpaper and semi-transparent navigation and main panels. Page switching
-is immediate, with no page animation. Reduced transparency and high-contrast
-preferences use opaque panels. See [Harbor](docs/UI_INTERFACES.md).
+Настройки можно менять во время работы. Кнопка **Сохранить и перезапустить** проверяет изменения, дожидается завершения текущего пожертвования или атаки и перезапускает бота с новыми параметрами. **Остановить** отменяет отложенный перезапуск. Когда бот остановлен, кнопка **Сохранить** применяет настройки без запуска автоматизации. Перед сохранением завершите ручное управление.
 
-Automatic farming follows resource levels rather than a countdown. The bot does
-not schedule session breaks or close Clash because of elapsed runtime. Old break
-settings and saved break deadlines are ignored. Stop and recovery controls remain available.
+Браузерный интерфейс **Harbor** использует чёрные, кобальтовые и латунные оттенки, абстрактные обои и полупрозрачные боковую и основную панели. Переключение страниц происходит без анимации. При уменьшенной прозрачности и повышенной контрастности панели становятся непрозрачными. См. [описание Harbor](docs/UI_INTERFACES.md).
 
-**Practice mode is not a simulator.** It skips normal donation taps but still
-allows navigation, and tools or attack actions can affect the real game. Use
-the offline preview below for tests without a game connection.
+Автоматический фарм зависит от уровня ресурсов, а не от таймера. Бот не планирует перерывы на основе длительности сессии и не закрывает Clash по времени работы. Старые настройки перерыва и сохранённые сроки перерывов игнорируются. Остановить бота и восстановить его после сбоя можно в любое время.
 
-### Live view
+**Тренировочный режим — не симулятор.** Он пропускает обычные нажатия пожертвований, но не запрещает навигацию, инструменты или атаки в настоящей игре. Для тестов без подключения к игре используйте описанный ниже офлайн-предпросмотр.
 
-Overview's **Live view** uses WebRTC video rather than screenshot polling.
-Watch during automation; to tap or swipe, stop the bot and choose **Take control**.
-Release control before starting the bot, calibrating, or running another tool.
-Releasing control does not restart automation.
+### Трансляция экрана
 
-Only one live stream/manual controller is supported at a time. Video requires
-a working Android encoder and a permitted local WebRTC connection.
-**Tools → Device → Current screenshot** or **Open game** provides a screenshot-based
-alternative. See [Live view setup](docs/WEB_UI.md#experimental-live-video).
+**Трансляция** на странице обзора использует WebRTC-видео вместо частого опроса снимков экрана. Просмотр доступен во время автоматизации; чтобы нажимать или проводить по экрану, сначала остановите бота, затем выберите **Взять управление**. Перед запуском бота, калибровкой или другим инструментом завершите ручное управление. Его завершение само по себе не перезапускает автоматизацию.
 
-## Attacks
+Одновременно поддерживается только один видеопоток и один контроллер. Для видео нужен работающий кодировщик Android и разрешённое локальное соединение WebRTC. В качестве альтернативы выберите **Инструменты → Устройство → Текущий снимок** или **Открыть игру**. См. [настройку трансляции](docs/WEB_UI.md#experimental-live-video).
 
-Automatic resource refill is **off by default**. The default attack method remains
-**Programmed tap sequence**; explicitly choose another method in Settings.
-**Farm now** on Overview uses that selection. Advanced mapping and custom-routine
-tools are available under **Tools → Attacks**.
+## Атаки
 
-### Automatic Electro Dragon attacks
+Автоматическое пополнение ресурсов атаками **по умолчанию выключено**. Исходный метод — **Последовательность нажатий**; другой метод нужно явно выбрать в настройках. Кнопка **Начать фарм** на странице обзора использует выбранный метод. Расширенная карта боя и редактор сценариев доступны в **Инструменты → Атаки**.
 
-This mode needs no saved tap routine or hand-drawn map. It follows one built-in
-mass Electro Dragon pattern rather than inventing a strategy for every base:
+### Автоматические атаки Электродраконами
 
-1. Return home, open unranked Battle, and pass the army confirmation.
-2. Verify independent battle controls before treating the opponent as ready.
-3. Zoom out and survey overlapping views to map the deployment boundary.
-4. Read army identities/quantities from matching fresh screenshots.
-5. Deploy Electro Dragons along a mapped edge, spread Rage spells inward, then
-   deploy the siege machine and available heroes. Each hero ability tap follows
-   its verified deployment.
-6. Verify deployments from count decreases or deployed-card states. Never blindly
-   repeat an uncertain map tap.
-7. Recognize results, return home, restore the camera, and confirm clan chat.
+Этому режиму не нужны сохранённая последовательность нажатий или нарисованная вручную карта. Используется один встроенный массовый сценарий Электродраконов — бот не придумывает отдельную тактику для каждой базы:
 
-Supported armies use Electro Dragons with optional Rage spells, one supported
-siege machine, and up to four recognizable heroes. Unknown cards, unsupported
-spells such as Recall, inconsistent counts, or an incomplete map stop deployment.
-An entered but skipped match is cleaned up and gets a retry cooldown, rather
-than repeatedly retrying the same unsupported army.
+1. Возвращается в деревню, открывает бой без рейтинга и подтверждает армию.
+2. Проверяет независимые элементы управления боем, прежде чем считать соперника готовым.
+3. Уменьшает масштаб и осматривает перекрывающиеся части экрана, чтобы построить карту границы размещения.
+4. Читает состав и количество армии по подходящим свежим снимкам.
+5. Размещает Электродраконов вдоль отмеченного края, направляет внутрь заклинания Ярости, затем размещает осадную машину и доступных героев. Способности героев нажимаются после проверки их размещения.
+6. Проверяет размещение по уменьшению счётчиков или состоянию карточек войск. Сомнительное нажатие на карте вслепую не повторяется.
+7. Распознаёт результат, возвращается домой, восстанавливает камеру и проверяет клановый чат.
 
-Hero portrait recognition is shared across registered accounts. Standard King,
-Queen, Warden, Royal Champion and Minion Prince portraits are bundled; reviewed
-skins saved on any account are reused by the others. Hero levels and pet badges
-are excluded from learned artwork. Availability and deployment are still checked
-on the current battle screen; sharing a portrait never shares an account's army
-or saved attack plan. Unrecognized skins remain unused until reviewed once.
+Поддерживаются армии с Электродраконами, необязательными заклинаниями Ярости, одной совместимой осадной машиной и максимум четырьмя распознаваемыми героями. Неизвестная карточка, неподдерживаемое заклинание вроде Возврата, несогласованные счётчики или неполная карта блокируют размещение. Если матч начат, но армия не поддерживается, бот завершает его как пропущенный и устанавливает паузу перед новой попыткой, а не запускает тот же неподходящий состав снова.
 
-With **Accounts → Check chat between tasks** enabled, the donor works like the
-other accounts: check chat after each task, handle a request pass, then continue.
-Accounts rotate directly to the next due village at safe task boundaries without
-required donor watch time. Unfinished checklists resume on their next turn;
-resource-full limits, failed-attack cooldowns and payment guards still apply.
+Портреты героев общие для зарегистрированных аккаунтов. В проекте есть стандартные портреты Короля, Королевы, Хранителя, Королевского чемпиона и Принца-миньона; проверенные пользователем облики сохраняются и используются остальными аккаунтами. Уровни героев и значки питомцев не включаются в обучаемые изображения. Доступность и размещение всё равно проверяются на экране текущего боя; общий портрет не переносит на другой аккаунт армию или план атаки. Нераспознанный облик не используется до отдельной проверки.
 
-Connection, navigation calibration, unit artwork, and the pinned gesture server
-are still required. This is not universal army/scenery support. Test one attack
-before enabling its schedule.
+Если включён параметр **Аккаунты → Проверять чат между задачами**, бот проверяет чат после каждой задачи, обрабатывает запросы и продолжает работу. Аккаунты переключаются на следующую деревню в безопасных точках задачи; отдельное время дежурства донора не требуется. Незавершённые проверки продолжаются при следующем посещении. Ограничения полного ресурса, задержки после неудачных атак и проверки затрат продолжают действовать.
 
-For automatic refill attacks, select **automatic** under **Settings → Attack
-method**, enable **Refill Home Village resources**, and save. Release manual
-control and press **Start**. **Start refill below (%)** and **Refill to (%)**
-default to 75% and 95%. Resources and actual storage capacities must be verified;
-the bot rechecks after each battle. This works with one account or many.
-Repeated unproductive attacks or unreadable counters defer refill while other
-visit tasks continue. Old farm-interval settings no longer schedule attacks.
+Для работы нужны подключение, калибровка навигации, изображения войск и закреплённый сервер жестов. Поддерживаются не все армии и декорации. Перед включением расписания проверьте одну атаку.
 
-### Custom routines and the original sequence
+Для пополнения ресурсами выберите **Автоматически** в параметре **Настройки → Метод атаки**, включите **Пополнять ресурсы основной деревни** и сохраните изменения. Завершите ручное управление и нажмите **Запустить**. Пороги **Начинать пополнение ниже (%)** и **Пополнить до (%)** по умолчанию равны 75% и 95%. Бот должен надёжно распознавать ресурсы и реальную вместимость хранилищ и проверяет их после каждого боя. Режим работает с одним или несколькими аккаунтами. Если счётчики не читаются или атаки не приносят ресурс, пополнение откладывается, пока продолжаются другие задачи посещения. Старые интервалы фарма больше не запускают атаки по таймеру.
 
-**Planner** lets you review/correct the army, inspect the opponent map, and edit
-ordered deployment, spell, ability, and wait steps. A saved routine must complete
-a supervised test before it can be scheduled; editing it removes that approval.
-Preparing an opponent enters a real match, so its scouting timer keeps running
-while you edit.
+### Пользовательские сценарии и последовательность нажатий
 
-**Programmed tap sequence** replays army-slot and map taps recorded under
-**Setup → Farm → Deploy tap sequence**. Camera-pan and farm-only tap variation
-settings belong to that fixed sequence. It needs a matching army bar, camera
-position, and calibration.
+**Планировщик** позволяет проверить или исправить состав армии, изучить карту противника и редактировать упорядоченные шаги размещения войск, заклинаний, способностей и ожидания. Сохранённый сценарий можно добавить в расписание только после пробного запуска под наблюдением; изменение сценария снимает это подтверждение. Подготовка противника начинает настоящий бой, поэтому время разведки продолжает идти, пока вы редактируете план.
 
-All three methods watch for **Return Home** and **Troops expended** together on
-two fresh results screenshots. Normal completion retains a calibrated timer
-fallback if recognition fails; it does not normally wait out that timer when
-results are recognized. See the [attack guide](docs/ATTACK_REBUILD.md) and
-[battle completion checks](docs/BATTLE_COMPLETION.md).
+**Последовательность нажатий** повторяет нажатия на слоты армии и карту, записанные через **Настройка → Фарм → Последовательность размещения**. Настройки перемещения камеры и случайного изменения нажатий для фарма относятся только к этой фиксированной последовательности. Требуются соответствующие панель армии, положение камеры и калибровка.
 
-## Optional upgrades
+Все три метода следят за одновременным появлением **Вернуться домой** и **Войска израсходованы** на двух свежих снимках экрана результата. При обычном завершении боя остаётся калиброванный запасной таймер на случай ошибки распознавания, но при распознанном результате бот обычно не ждёт окончания всего таймера. См. [руководство по атакам](docs/ATTACK_REBUILD.md) и [проверки завершения боя](docs/BATTLE_COMPLETION.md).
 
-For a new village, **Settings → Upgrades → Village progression** adds construction
-before upgrades, army preparation from verified unlocks/camp space, farming-unit
-research priority, and a complete-building gate before Town Hall upgrades.
-This opt-in pilot is being validated from TH2; later halls and automatic spell
-editing are not fully validated. See [Home Village progression](docs/HOME_PROGRESSION.md)
-before enabling it on an account.
+## Необязательные улучшения
 
-Building/research/pet automation is **off by default**. First stop the bot and use
-**Tools → Upgrades → Building upgrades / Army research / Pet upgrades → Check upgrades**. This reads
-eligible entries without spending. **Start recommended upgrade** is a separate
-action with confirmation and fresh checks.
+Для новой деревни параметр **Настройки → Улучшения → Развитие деревни** включает строительство до улучшений, подготовку армии по подтверждённым открытиям и свободному месту в лагерях, приоритет исследования войск для фарма и проверку завершения зданий перед улучшением Ратуши. Этот пробный режим проверяется начиная с Ратуши 2; более поздние уровни и автоматическое изменение заклинаний полностью не проверены. Перед включением ознакомьтесь с [развитием основной деревни](docs/HOME_PROGRESSION.md).
 
-Enable desired categories in **Settings → Upgrades** for automatic operation.
-The bot checks builder/laboratory/pet availability, supported recommendations, price,
-currency, and balance. Reserves are minimum balances to keep **after** paying.
-You can also reserve builders and exclude names.
-Builder and resource reserves default to zero; their optional overrides are in
-Advanced. Visits check builders before long refill runs and return to chat after
-each verified upgrade. Unfinished secondary visits resume later rather than
-keeping the main donor away from requests indefinitely. Accounts shows each
-category's last result, check time, and any reason for a deferred upgrade.
+Автоматизация улучшений зданий, исследований и питомцев **по умолчанию выключена**. Для безопасной проверки сначала остановите бота и выберите **Инструменты → Улучшения → Здания / Исследование войск / Питомцы → Проверить улучшения**. Проверка читает доступные варианты, не тратя ресурсы. **Начать рекомендованное улучшение** — отдельное действие с подтверждением и повторной проверкой данных.
 
-Pet upgrades use their own free slot and the dark-elixir reserve. Only unassigned
-pets are eligible by default. **Allow upgrades of equipped pets** is a separate
-setting because an upgrading pet may be unavailable for attacks.
+Чтобы включить автоматическую работу, отметьте категории в **Настройки → Улучшения**. Бот проверяет наличие строителей, лаборатории или свободной ячейки питомца, поддерживаемую рекомендацию, стоимость, валюту и баланс. Резерв задаётся как минимальный остаток **после оплаты**. Можно резервировать строителей и исключать названия из списка.
 
-Without Village progression, walls, heroes, the Town Hall, new building purchases,
-equipment, and several army-production buildings are excluded. Village progression
-can bulk-upgrade verified walls while keeping resource reserves. Buildings and research must be in the
-Suggested list; pets must have a verified name, assignment, and price.
-This path does not authorize gems, magic items, or buying missing
-resources. An uncertain spending result blocks another purchase until the
-pending action can be reconciled. See [upgrade rules and exclusions](docs/UPGRADES.md).
+Резерв строителей и ресурсов по умолчанию равен нулю; необязательные ограничения можно задать в разделе **Дополнительно**. Перед долгими атаками для пополнения бот проверяет строителей и возвращается в чат после каждого подтверждённого улучшения. Незавершённое посещение вторичной деревни продолжится позже, чтобы донор не оставался вдали от запросов надолго. На странице аккаунтов отображаются результат по категории, время проверки и причина отложенного улучшения.
 
-## Recovery, backups, and storage
+Для улучшений питомцев используется отдельная ячейка и резерв тёмного эликсира. По умолчанию разрешены только незанятые питомцы. Параметр **Разрешить улучшение экипированных питомцев** вынесен отдельно, потому что улучшаемый питомец может быть недоступен для атаки.
 
-Attack progress is recorded before game input. After an interruption, recovery
-inspects the current screen instead of replaying deployments or abilities.
-It waits through a verified battle, requires visual results to leave, and checks
-home/camera/clan chat before clearing the interrupted operation. Recovery does
-not use the ordinary timer-based Return Home fallback; it pauses if confirmation
-cannot be obtained. Upgrade spending has a separate pending-action journal.
+Без режима «Развитие деревни» исключены стены, герои, Ратуша, покупка новых зданий, снаряжение и несколько зданий производства армии. В режиме развития деревни бот может улучшать проверенные стены группами, сохраняя резерв ресурсов. Здания и исследования должны находиться в списке рекомендаций; у питомца должны быть проверены имя, назначение и стоимость.
 
-On CasaOS, three failed screenshot captures trigger a managed recovery check.
-The app pauses inputs and verifies that Android's shell responds while its
-graphics service times out before restarting the Waydroid session. A failed
-video capture can request the same check. It verifies capture again before
-resuming a previously running bot through its existing recovery journals.
-Stop cancels recovery and prevents automatic resume. Restarts are limited to
-two per hour, with a five-minute cooldown. Unconfirmed faults require manual
-inspection; recovery never reinstalls Android or resets calibration/game data.
+Этот механизм не разрешает тратить самоцветы или магические предметы и не позволяет покупать недостающие ресурсы. Если результат траты нельзя подтвердить, новая покупка блокируется, пока незавершённое действие не будет сверено с игрой. См. [правила и исключения улучшений](docs/UPGRADES.md).
 
-If recovery is pending, inspect the game and logs. Do not delete recovery files
-just to force another attack or purchase. **Stop** leaves unfinished recovery
-information intact. See [attack recovery](docs/ATTACK_REBUILD.md#interrupted-attacks-and-diagnostic-storage).
+## Восстановление и резервные копии
 
-Persistent files live in the checkout for source installations, or inside
-`/DATA/AppData/coc-bot/profile` for CasaOS:
+Прогресс атаки записывается до отправки игровых команд. После прерывания бот проверяет текущий экран, а не воспроизводит размещение войск или применение способностей. Он дожидается подтверждённого боя, визуально проверяет уход с экрана результата и проверяет деревню, положение камеры и клановый чат перед завершением незаконченной операции. При восстановлении атаки не используется обычный таймер возврата домой: без визуального подтверждения бот приостанавливается. Для трат на улучшения действует отдельный журнал незавершённых действий.
 
-- `data/calibrated.yaml` and `data/templates/`: calibration and reference images.
-- `data/user_settings.yaml`: saved settings, separate from tracked defaults.
-- `data/attack-planner/`: saved routines, reviewed artwork, and recovery state.
-- `data/upgrades/` and `data/runtime_state.json`: upgrade and scheduling history.
-- `data/collection/`: optional development screenshot collection.
-- `data/debug/`: generated diagnostics, survey images, and execution journals.
+В CasaOS три неудачных снимка экрана запускают проверку восстановления. Бот приостанавливает нажатия и проверяет, отвечает ли оболочка Android, пока служба графики недоступна, и только затем перезапускает сессию Waydroid. Ошибка видеозахвата может запросить ту же проверку. Перед продолжением бот повторно проверяет захват и восстанавливает ранее запущенную автоматизацию по существующим журналам атак и покупок. **Остановить** отменяет восстановление и запрещает автоматический запуск. Перезапуск ограничен двумя попытками в час с пятиминутной паузой. Неподтверждённые сбои требуют ручной проверки; восстановление не переустанавливает Android и не сбрасывает калибровку или игровые данные.
 
-Library calibration exports are **not** complete game/account backups. Back up
-the full profile separately when migrating settings and routines. CasaOS host
-setup creates verified installation backups under `/DATA/AppData/coc-bot/backups`.
-Waydroid's Android/account data remains on the host and is not included in those
-bot backups.
+Если восстановление ожидает проверки, осмотрите игру и журналы. Не удаляйте файлы восстановления только для того, чтобы принудительно запустить атаку или покупку. Кнопка **Остановить** сохраняет информацию о незавершённой операции. См. [восстановление атаки и диагностические файлы](docs/ATTACK_REBUILD.md#interrupted-attacks-and-diagnostic-storage).
 
-Logs rotate at 10 MB with seven-day retention. Generated attack diagnostics are
-pruned between operations using seven-day, 1 GiB, and 40-group limits, preserving
-the newest three groups per diagnostic family. Those protections can leave
-storage above the target. Cleanup pauses during pending attack/camera recovery
-and excludes calibration, backups, and reviewed datasets.
+Для обычной установки Linux постоянные файлы хранятся в каталоге проекта; в CasaOS — в <code>/DATA/AppData/coc-bot/profile</code>:
 
-Screenshot collection is separate and opt-in. Defaults are 200 images per UTC
-day and 5 GB; it skips duplicates and pauses at the storage cap rather than
-deleting reviewed data. Screenshots, labels, learned artwork, and account data
-are not automatically uploaded to GitHub. Review exports for player names, chat,
-and device details before sharing. See [collection](docs/SMART_COLLECTION.md) and
-[labeling](docs/ANNOTATION_WORKFLOW.md).
+- <code>data/calibrated.yaml</code> и <code>data/templates/</code> — калибровка и эталонные изображения.
+- <code>data/user_settings.yaml</code> — сохранённые настройки отдельно от файлов настроек в репозитории.
+- <code>data/attack-planner/</code> — сценарии, проверенные изображения и состояние восстановления.
+- <code>data/upgrades/</code> и <code>data/runtime_state.json</code> — история улучшений и расписания.
+- <code>data/collection/</code> — необязательный набор снимков для разработки.
+- <code>data/debug/</code> — созданная диагностика, обзорные изображения и журналы операций.
 
-## Updating
+Экспорт калибровки из библиотеки **не является** полной копией игры или аккаунта. При переносе настроек и сценариев сохраните весь профиль отдельно. Настройка хоста CasaOS создаёт проверенные копии установки в <code>/DATA/AppData/coc-bot/backups</code>. Данные Android, Waydroid и аккаунта остаются на хосте и не входят в резервные копии бота.
 
-### Bot updates
+Журналы ротируются при достижении 10 МБ, срок хранения — семь дней. Сгенерированная диагностика атак удаляется между операциями с ограничениями: семь дней, 1 ГБ и 40 групп с сохранением трёх последних групп каждого типа. Из-за этого каталог может превышать целевой размер. Очистка приостанавливается во время восстановления атаки или камеры; калибровки, резервные копии и проверенные наборы данных не удаляются.
 
-Stop automation, release manual control, and export a calibration backup first.
-For the Linux source installation, stop the web server with Ctrl+C, then run:
+Сбор снимков экрана — отдельная необязательная функция. По умолчанию сохраняется не больше 200 изображений в день по UTC и 5 ГБ; дубликаты пропускаются, а при достижении лимита места проверенные данные не удаляются. Снимки, разметка, обученные изображения и данные аккаунта **не загружаются на GitHub автоматически**. Перед передачей архива проверьте его на имена игроков, сообщения чата и данные устройства. См. [сбор данных](docs/SMART_COLLECTION.md) и [разметку](docs/ANNOTATION_WORKFLOW.md).
 
-```bash
+## Обновление
+
+### Обновление бота
+
+Сначала остановите автоматизацию, завершите ручное управление и экспортируйте резервную копию калибровки. При установке из исходников остановите веб-сервер сочетанием Ctrl+C и выполните:
+
+~~~bash
 cd ~/Projects/coc-donation-bot
 git pull --ff-only
 bash scripts/setup_linux.sh --web
@@ -438,120 +254,77 @@ source .venv/bin/activate
 python -m pip install -e '.[web,web-live]'
 python scripts/setup_live_view.py
 python -m coc_bot.web
-```
+~~~
 
-Use your existing `--host`/`--origin` arguments for LAN access. Refresh the browser
-after startup. Normal updates preserve private settings/calibration. If Git
-reports conflicting local edits, back those files up and resolve the conflict
-rather than resetting them.
+Для доступа из локальной сети передайте прежние параметры <code>--host</code> и <code>--origin</code>. После запуска обновите страницу браузера. Обычное обновление сохраняет приватные настройки и калибровку. Если Git сообщает о конфликтующих локальных изменениях, сохраните копии этих файлов и разрешите конфликт — не сбрасывайте их принудительно.
 
-For CasaOS, Git pull alone does not update the running image. Pull the source,
-rebuild with `bash packaging/casaos/build.sh`, then recreate the **bot** service
-using the installed Compose configuration and new image. Preserve its environment,
-profile mounts, and host-session settings. Code-only updates do not require
-rerunning privileged host setup. Keep the previous image for rollback; rebuilding
-the app does not update the separately installed host helper. See the
-[CasaOS guide](docs/CASAOS_PACKAGE.md) for helper updates.
+Для CasaOS команда <code>git pull</code> сама по себе не обновляет работающий образ. Скачайте исходный код, пересоберите образ командой <code>bash packaging/casaos/build.sh</code>, затем пересоздайте сервис **bot** с установленной конфигурацией Compose и новым образом. Сохраните переменные окружения, подключение профиля и параметры сессии хоста. Для обновления только кода повторно запускать привилегированную настройку хоста не требуется. Оставьте предыдущий образ для отката: пересборка приложения не обновляет отдельно установленный вспомогательный сервис хоста. Обновление службы описано в [руководстве CasaOS](docs/CASAOS_PACKAGE.md).
 
-### Clash of Clans updates
+### Обновление Clash of Clans
 
-After an initially trusted installation, CasaOS checks for newer Clash APKs when
-its managed runtime starts. You can also stop the bot and choose
-**Tools → System → Update Clash**. The updater uses a third-party APK source and
-checks the package, newer version, and signing certificate before installing.
-It does not uninstall Clash or clear account data. Initial installation still
-requires your trusted APK archive; import remains the fallback.
+После установки из доверенного источника CasaOS при запуске управляемой среды проверяет, доступны ли более новые APK Clash. Также можно остановить бота и выбрать **Инструменты → Система → Обновить Clash**. Для обновления используется сторонний источник APK; перед установкой проверяются пакет, версия и сертификат подписи. Clash не удаляется, игровые данные не очищаются. Для первоначальной установки всё равно нужен доверенный архив APK; импорт остаётся запасным вариантом.
 
-After a game update, inspect the interface and preview affected actions before
-restarting automation. Updating the APK does not update calibration or guarantee
-recognition compatibility. See [updater details](docs/CASAOS_PACKAGE.md#updating-clash)
-and [UI compatibility](docs/UI_COMPATIBILITY.md).
+После обновления игры проверьте интерфейс и предварительно просмотрите затронутые действия перед запуском автоматизации. Обновление APK не меняет калибровку и не гарантирует совместимость распознавания. См. [сведения об обновлении игры](docs/CASAOS_PACKAGE.md#updating-clash) и [совместимость интерфейса](docs/UI_COMPATIBILITY.md).
 
-## Troubleshooting
+## Решение проблем
 
-- **No Android connection:** check `waydroid status`, reconnect the correct
-  address, and confirm `adb devices` reports `device`. Use **Check device**.
-- **CasaOS startup fails:** read runtime status and use Retry after resolving its
-  cause. Stale Waydroid container state may need a host administrator to restart
-  `waydroid-container.service`; do not reset Android or uninstall Clash.
-- **Start is blocked:** check missing calibration, manual control, another bot
-  process, or pending recovery. Only one operation can control Android at a time.
-- **Donations are skipped:** check selected-elixir verification, Donate text,
-  request eligibility, and the actual panel's grid calibration. Do not bypass
-  resource checks to make it tap.
-- **Attacks skip or stop early:** inspect the army/map report and activity.
-  Unknown cards or missing boundary evidence deliberately block deployment.
-- **Return Home misses:** recalibrate it on a real results screen. A longer timer
-  does not correct coordinates.
-- **Live view freezes:** check its frame-rate/error status and retry. A current
-  screenshot helps distinguish a video problem from a stopped game.
-- **Settings do not apply:** click Save or Save & restart. Resolve conflicts by
-  reloading before editing again, and release manual control before saving.
-- **Reporting a problem:** export activity and download the Tools report.
-  Include the visible screen, intended action, and actual result. Remove private
-  account/chat details before sharing screenshots or logs.
+- **Нет соединения с Android:** проверьте <code>waydroid status</code>, подключитесь к правильному адресу и убедитесь, что <code>adb devices</code> показывает <code>device</code>. Затем нажмите **Проверить устройство**.
+- **CasaOS не запускается:** проверьте статус среды и причину сбоя, затем повторите запуск после её устранения. Устаревшее состояние Waydroid может потребовать перезапуска <code>waydroid-container.service</code> администратором хоста; не сбрасывайте Android и не удаляйте Clash.
+- **Запуск заблокирован:** проверьте отсутствующую калибровку, активное ручное управление, второй процесс бота или ожидающее восстановление. Android одновременно может контролировать только одна операция.
+- **Пожертвование пропускается:** проверьте выбор эликсира, текст кнопки «Пожертвовать», допустимость запроса и калибровку сетки реальной панели. Не отключайте проверки ресурсов ради нажатия.
+- **Атака пропускается или завершается раньше времени:** изучите отчёт об армии, карте и журнал событий. Неизвестные карточки и неполные данные о границе намеренно блокируют размещение.
+- **Не нажимается «Вернуться домой»:** откалибруйте элемент на настоящем экране результата. Увеличение таймера не исправит координаты.
+- **Зависает трансляция:** проверьте частоту кадров и сообщения об ошибках, затем повторите запуск. Свежий снимок поможет отличить сбой видео от остановки игры.
+- **Настройки не применяются:** нажмите **Сохранить** или **Сохранить и перезапустить**. При конфликте сначала перезагрузите настройки, затем редактируйте снова; перед сохранением завершите ручное управление.
+- **Сообщение об ошибке:** экспортируйте журнал событий и скачайте отчёт через инструменты. Приложите видимый экран, ожидаемое действие и фактический результат. Перед отправкой удалите приватные данные аккаунта и чата.
 
-## Development
+## Разработка и проверки
 
-Python code lives under `src/coc_bot/`. Game behavior is in `donation/`, `attack/`,
-`upgrades/`, and `vision/`; `runtime/` handles scheduling, ownership, and retention.
-`control/` and `calibration/` provide shared services. FastAPI routes live in
-`src/coc_bot/web/`; React/TypeScript source lives in `web/`.
+Код Python находится в <code>src/coc_bot/</code>. Игровая логика разделена между <code>donation/</code>, <code>attack/</code>, <code>upgrades/</code> и <code>vision/</code>; за расписания, владение ресурсами и хранение отвечает <code>runtime/</code>. Общие сервисы находятся в <code>control/</code> и <code>calibration/</code>. Маршруты FastAPI — в <code>src/coc_bot/web/</code>, исходники React/TypeScript — в <code>web/</code>.
 
-Compiled browser assets are committed under `src/coc_bot/web/static/`, so normal
-installation does not require Node.js. After editing frontend source:
+Собранные файлы браузерной панели хранятся в <code>src/coc_bot/web/static/</code>, поэтому для обычной установки Node.js не нужен. После изменения интерфейса пересоберите его:
 
-```bash
+~~~bash
 cd web
 corepack pnpm install --frozen-lockfile
 corepack pnpm run build
 cd ..
-```
+~~~
 
-Commit rebuilt assets with the frontend change.
+Добавьте пересобранные ресурсы вместе с изменениями интерфейса.
 
-The default install uses Tesseract/OpenCV without EasyOCR/Torch. Enhanced capacity
-OCR is optional; `bash scripts/setup_linux.sh --web --ocr` installs and preloads
-it. See [Contributing](docs/CONTRIBUTING.md) for the optional CasaOS image build.
+Обычная установка использует Tesseract и OpenCV, без EasyOCR и Torch. Улучшенное распознавание вместимости необязательно; команда <code>bash scripts/setup_linux.sh --web --ocr</code> установит и подготовит его. Необязательная сборка образа CasaOS описана в [руководстве участника проекта](docs/CONTRIBUTING.md).
 
-For offline Python checks:
+Для офлайн-проверок Python:
 
-```bash
+~~~bash
 source .venv/bin/activate
 python -m pip install -e '.[web,web-test]'
 python -m unittest discover -s tests -v
 python scripts/verify_farm_offline.py
 python scripts/verify_smart_collection.py
 python scripts/verify_battle_completion.py
-```
+~~~
 
-Use disposable profiles for tests, never live calibration. To explore the browser
-with a fake device and no real ADB input:
+Для тестов используйте отдельные профили, а не действующую калибровку. Чтобы открыть панель с поддельным устройством и без настоящих команд ADB:
 
-```bash
+~~~bash
 PYTHONPATH=src python scripts/preview_web_offline.py
-```
+~~~
 
-The original Tkinter interface remains available with `python -m coc_bot.main`;
-terminal-only operation uses `python -m coc_bot.main --no-gui`. They share the
-engine/profile formats, but newer planner and upgrade-preview controls are in
-the browser. Stop the active controller before switching interfaces.
+Прежний интерфейс Tkinter доступен командой <code>python -m coc_bot.main</code>; запуск только из терминала — <code>python -m coc_bot.main --no-gui</code>. Интерфейсы используют общий движок и формат профиля, но новые инструменты планировщика и предварительного просмотра улучшений доступны в браузере. Перед переключением интерфейсов остановите активный контроллер.
 
-Further documentation:
+Дополнительная документация:
 
-- [Browser setup and controls](docs/WEB_UI.md)
-- [CasaOS package and host integration](docs/CASAOS_PACKAGE.md)
-- [Attack planner, automatic farming, and recovery](docs/ATTACK_REBUILD.md)
-- [Battle completion recognition](docs/BATTLE_COMPLETION.md)
-- [Suggested upgrades and safeguards](docs/UPGRADES.md)
-- [Architecture](docs/HOW_IT_WORKS.md) and [reliability checks](docs/RELIABILITY.md)
-- [Screenshot collection](docs/SMART_COLLECTION.md), [annotation workflow](docs/ANNOTATION_WORKFLOW.md),
-  and [perception research](docs/PERCEPTION.md)
-- [Advanced running options](docs/RUNNING.md) and [contributing](docs/CONTRIBUTING.md)
+- [Настройка браузерной панели и управление](docs/WEB_UI.md)
+- [Пакет CasaOS и интеграция с хостом](docs/CASAOS_PACKAGE.md)
+- [Планировщик атак, автоматический фарм и восстановление](docs/ATTACK_REBUILD.md)
+- [Распознавание завершения боя](docs/BATTLE_COMPLETION.md)
+- [Рекомендации по улучшениям и защитные проверки](docs/UPGRADES.md)
+- [Архитектура](docs/HOW_IT_WORKS.md) и [проверки надёжности](docs/RELIABILITY.md)
+- [Сбор снимков](docs/SMART_COLLECTION.md), [разметка](docs/ANNOTATION_WORKFLOW.md) и [исследования распознавания](docs/PERCEPTION.md)
+- [Дополнительные параметры запуска](docs/RUNNING.md) и [участие в разработке](docs/CONTRIBUTING.md)
 
-## License and contribution policy
+## Лицензия и вклад в проект
 
-The code uses the [MIT License](LICENSE). Maintainers do not provide help with
-detection evasion, paid botting, or account farming/selling. Contributions that
-improve reliability, usability, documentation, and computer-vision research are
-welcome under the [contribution policy](docs/CONTRIBUTING.md).
+Код распространяется по лицензии [MIT](LICENSE). Сопровождающие проекта не помогают обходить обнаружение, зарабатывать на ботах, прокачивать аккаунты или продавать их. Приветствуются вклады в надёжность, удобство, документацию и исследования компьютерного зрения — в соответствии с [правилами участия](docs/CONTRIBUTING.md).
