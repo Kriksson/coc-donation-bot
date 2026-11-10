@@ -374,10 +374,13 @@ class UpdatedMenuTests(unittest.TestCase):
     def test_each_reward_is_cleared_before_home_confirmation(self):
         nav=self.navigator()
         nav.donation_nav=MagicMock()
+        nav.donation_nav._stopping.return_value=False
+        nav.donation_nav.capture.screenshot.return_value=self.frame()
         nav.classifier._clan_chat_anchor_visible=MagicMock(return_value=True)
-        with patch('coc_bot.vision.battle_menu.reward_continue_button',side_effect=[(941,945),(941,945),None]):
+        with patch('coc_bot.vision.battle_menu.reward_continue_button',
+                   side_effect=[(941,945),(941,945),(941,945),(941,945),None]):
             self.assertEqual(nav._confirm_leave_via_clan_chat(timeout=5),'confirmed')
-        self.assertEqual(nav.input.tap.call_count,2)
+        self.assertEqual(nav.donation_nav.input.tap.call_count,2)
         nav.donation_nav._open_clan_chat.assert_not_called()
 
     def test_stop_during_reward_recognition_prevents_continue_tap(self):

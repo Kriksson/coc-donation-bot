@@ -108,7 +108,7 @@ class HallTransitionTests(unittest.TestCase):
         r.reader.menu_kind.return_value='buildings'
         row={'name':'Town Hall','currency':'gold','cost':4000,'new':False,
              'target_level':badge,'box':[1358,715,495,117]}
-        r.reader.rows.return_value=[row]; r.capture.screenshot.return_value=frame
+        r.reader.rows.return_value=[row]; r.capture.capture.screenshot.return_value=frame
         r.wait=Mock(return_value=False)
         return r.scan(frame)
 

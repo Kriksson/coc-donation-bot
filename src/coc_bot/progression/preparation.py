@@ -300,7 +300,9 @@ class ArmyPreparation:
         check_stop(self.stop);self.s.input.tap(*point,jitter=0);self.s._sleep(.25)
 
     def hall(self):
-        r=ProgressionRunner(self.s.config,self.capture,self.s.input,self.s.navigator,self.stop)
+        capture=getattr(self,'capture',None)
+        if capture is None:capture=self.s.capture
+        r=ProgressionRunner(self.s.config,capture,self.s.input,self.s.navigator,self.stop)
         try:
             frame=r.open_menu('buildings')
             if frame is None:raise ValueError('Stopped')

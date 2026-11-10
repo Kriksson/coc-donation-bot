@@ -33,6 +33,8 @@ class BuilderBoatTargetTests(unittest.TestCase):
         frame=cv2.imread(str(Path(__file__).parent/'fixtures'/'builder_base'/'dark-coast-boat-transition.png'))
         point=self.reader.boat_target(frame,returning=True,threshold=.30)
         self.assertIsNotNone(point)
+        self.assertTrue(1420<=point[0]<=1580)
+        self.assertTrue(220<=point[1]<=380)
 
 
 if __name__=='__main__':

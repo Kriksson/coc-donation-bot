@@ -77,11 +77,38 @@ class BuilderReader(UpgradeReader):
         white=lambda hsv: (cv2.inRange(hsv,(0,0,150),(180,70,255))>0)
         expected_red=red(to_hsv);expected_white=white(to_hsv)
         observed_red=red(observed_hsv);observed_white=white(observed_hsv)
-        if (expected_red.sum()<8 or expected_white.sum()<8
-                or observed_red[expected_red].mean()<.50
-                or observed_white[expected_white].mean()<.50):
-            return None
-        return point
+        if (expected_red.sum()>=8 and expected_white.sum()>=8
+                and observed_red[expected_red].mean()>=.50
+                and observed_white[expected_white].mean()>=.50):
+            return point
+        if not returning:return None
+
+        # The return animation can show the boat at roughly 2.5x the size of
+        # the small menu icon. Search that transition with both sail colors at
+        # the same location; a single-color match or a generic scenery match
+        # is never enough to produce a tap target.
+        region=crop(frame,box)
+        rh,rw=region.shape[:2]
+        if expected_red.sum()<8 or expected_white.sum()<8:return None
+        region_hsv=cv2.cvtColor(region,cv2.COLOR_BGR2HSV)
+        region_red=red(region_hsv).astype(np.uint8)
+        region_white=white(region_hsv).astype(np.uint8)
+        best=None
+        for factor in np.arange(1.2,3.31,.15):
+            tw=max(1,round(template.shape[1]*w/1853*factor))
+            th=max(1,round(template.shape[0]*w/1853*factor))
+            if tw>rw or th>rh:continue
+            red_ref=cv2.resize(expected_red.astype(np.uint8),(tw,th),interpolation=cv2.INTER_NEAREST)
+            white_ref=cv2.resize(expected_white.astype(np.uint8),(tw,th),interpolation=cv2.INTER_NEAREST)
+            red_scores=cv2.matchTemplate(region_red,red_ref,cv2.TM_CCORR_NORMED)
+            white_scores=cv2.matchTemplate(region_white,white_ref,cv2.TM_CCORR_NORMED)
+            scores=np.minimum(red_scores,white_scores)
+            _,score,_,loc=cv2.minMaxLoc(scores)
+            if best is None or score>best[0]:
+                best=(score,round(w*box[0])+loc[0]+tw//2,
+                      round(h*box[1])+loc[1]+th//2)
+        if best is not None and best[0]>=max(.38,threshold):return (best[1],best[2])
+        return None
 
     def daily_reward_close(self, frame):
         """Only close the inspected daily calendar; never select its rewards."""

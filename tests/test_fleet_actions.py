@@ -154,10 +154,11 @@ class ProgressionAvailabilityTests(unittest.TestCase):
         config=SimpleNamespace(data_dir=Path(root),upgrade_builders_reserved=0,upgrade_excluded_names='',
                                upgrade_gold_reserve=0,upgrade_elixir_reserve=0,upgrade_dark_elixir_reserve=0)
         runner=ProgressionRunner(config,Mock(),Mock(),Mock())
-        runner.capture.screenshot.return_value=np.zeros((1048,1853,3),dtype=np.uint8)
+        frame=np.zeros((1048,1853,3),dtype=np.uint8)
+        runner.capture.capture.screenshot.return_value=frame
         runner.reader=Mock();runner.reader.menu_kind.return_value=None;runner.reader.filters_open.return_value=False
         runner.reader.availability.return_value=(1,5)
-        runner.open_menu=Mock(return_value=runner.capture.screenshot.return_value);runner.close=Mock()
+        runner.open_menu=Mock(return_value=frame);runner.close=Mock()
         return runner
 
     def test_unreadable_existing_price_does_not_idle_other_builders_or_unlock_hall(self):
