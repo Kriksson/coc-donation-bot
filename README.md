@@ -1,8 +1,44 @@
-# CoC Bot
+<picture>
+  <source media="(prefers-reduced-motion: reduce) and (max-width: 600px)" srcset="docs/readme/hero-mobile.svg">
+  <source media="(prefers-reduced-motion: reduce)" srcset="docs/readme/hero.svg">
+  <source media="(max-width: 600px)" srcset="docs/readme/motion/hero-mobile.svg">
+  <img src="docs/readme/motion/hero.svg" alt="CoC Bot" width="100%">
+</picture>
 
-<picture><img src="docs/images/coc-bot-banner.svg" alt="CoC Bot — автоматизация, зрение и управление через локальную панель" width="100%"></picture>
+Проект на Python для распознавания экрана Clash of Clans и управления через ADB. Локальная веб-панель доступна с компьютера и телефона; в проекте есть калибровка, диагностика, восстановление операций и офлайн-предпросмотр.
 
-<p align="center"><strong>Самостоятельный проект на Python: компьютерное зрение для Clash of Clans и панель управления, доступная с компьютера или телефона в одной локальной сети.</strong></p>
+<picture>
+  <source media="(prefers-reduced-motion: reduce)" srcset="docs/readme/stack/tech-1.svg">
+  <img src="docs/readme/motion/stack/tech-1.svg" alt="Python 3.10+">
+</picture>
+<picture>
+  <source media="(prefers-reduced-motion: reduce)" srcset="docs/readme/stack/tech-2.svg">
+  <img src="docs/readme/motion/stack/tech-2.svg" alt="OpenCV">
+</picture>
+<picture>
+  <source media="(prefers-reduced-motion: reduce)" srcset="docs/readme/stack/tech-3.svg">
+  <img src="docs/readme/motion/stack/tech-3.svg" alt="NumPy">
+</picture>
+<picture>
+  <source media="(prefers-reduced-motion: reduce)" srcset="docs/readme/stack/tech-4.svg">
+  <img src="docs/readme/motion/stack/tech-4.svg" alt="ADB">
+</picture>
+<picture>
+  <source media="(prefers-reduced-motion: reduce)" srcset="docs/readme/stack/tech-5.svg">
+  <img src="docs/readme/motion/stack/tech-5.svg" alt="Waydroid">
+</picture>
+<picture>
+  <source media="(prefers-reduced-motion: reduce)" srcset="docs/readme/stack/tech-6.svg">
+  <img src="docs/readme/motion/stack/tech-6.svg" alt="FastAPI">
+</picture>
+<picture>
+  <source media="(prefers-reduced-motion: reduce)" srcset="docs/readme/stack/tech-7.svg">
+  <img src="docs/readme/motion/stack/tech-7.svg" alt="React">
+</picture>
+<picture>
+  <source media="(prefers-reduced-motion: reduce)" srcset="docs/readme/stack/tech-8.svg">
+  <img src="docs/readme/motion/stack/tech-8.svg" alt="TypeScript">
+</picture>
 
 > **Внимание: автоматизация может привести к постоянной блокировке аккаунта.** Supercell запрещает ботов и автоматизацию игрового процесса в своей [политике честной игры](https://supercell.com/en/safe-and-fair-play/). Учебная цель и тренировочный режим не делают использование автоматизации в живой игре разрешённым. Проект не связан с Supercell и не одобрен компанией.
 
@@ -11,7 +47,14 @@
 <picture><img src="docs/images/dashboard-preview.png" alt="Веб-панель CoC Bot в изолированном офлайн-предпросмотре" width="100%"></picture>
 <p align="center"><sub>Снимок панели создан в офлайн-предпросмотре: игровой аккаунт и Waydroid не подключены.</sub></p>
 
-## Содержание
+<h2 id="содержание">
+<picture>
+  <source media="(prefers-reduced-motion: reduce) and (max-width: 600px)" srcset="docs/readme/headings/section-1-mobile.svg">
+  <source media="(prefers-reduced-motion: reduce)" srcset="docs/readme/headings/section-1.svg">
+  <source media="(max-width: 600px)" srcset="docs/readme/motion/headings/section-1-mobile.svg">
+  <img src="docs/readme/motion/headings/section-1.svg" alt="Содержание" width="100%">
+</picture>
+</h2>
 
 - [Возможности](#возможности)
 - [Совместимость и ограничения](#совместимость-и-ограничения)
@@ -29,7 +72,14 @@
 - [Разработка и проверки](#разработка-и-проверки)
 - [Лицензия и вклад в проект](#лицензия-и-вклад-в-проект)
 
-## Возможности
+<h2 id="возможности">
+<picture>
+  <source media="(prefers-reduced-motion: reduce) and (max-width: 600px)" srcset="docs/readme/headings/section-2-mobile.svg">
+  <source media="(prefers-reduced-motion: reduce)" srcset="docs/readme/headings/section-2.svg">
+  <source media="(max-width: 600px)" srcset="docs/readme/motion/headings/section-2-mobile.svg">
+  <img src="docs/readme/motion/headings/section-2.svg" alt="Возможности" width="100%">
+</picture>
+</h2>
 
 - **Пожертвования:** поиск кнопок «Пожертвовать» в клановом чате, проверка запроса и режима эликсира, поддержка конкретных и необязательных открытых или смешанных запросов. Учтены панели с разной вместимостью войск, заклинаний и осадных машин.
 - **Атаки без рейтинга:** автоматические атаки Электродраконами, редактируемые сценарии с картой боя или последовательность нажатий. Автоматический режим и планировщик строят карту противника и проверяют действия размещения.
@@ -40,11 +90,25 @@
 - **Автоматические защитные планировки:** необязательное удаление препятствий ради ресурсов, импорт встроенных планировок, размещение оставшихся предметов и проверенная активация в дополнительном слоте основной деревни. Нужны совместимая встроенная ссылка на копирование и распознавание стандартного ландшафта; для Ратуш 2 и 3 автоматическое копирование не поддерживается. См. [автоматические планировки](docs/AUTOMATIC_LAYOUTS.md).
 - **Инструменты разработки:** необязательный сбор снимков, разметка и экспорт, офлайн-проверки и экспериментальный модуль наблюдения за распознаванием экрана.
 
-## Совместимость и ограничения
+<h2 id="совместимость-и-ограничения">
+<picture>
+  <source media="(prefers-reduced-motion: reduce) and (max-width: 600px)" srcset="docs/readme/headings/section-3-mobile.svg">
+  <source media="(prefers-reduced-motion: reduce)" srcset="docs/readme/headings/section-3.svg">
+  <source media="(max-width: 600px)" srcset="docs/readme/motion/headings/section-3-mobile.svg">
+  <img src="docs/readme/motion/headings/section-3.svg" alt="Совместимость и ограничения" width="100%">
+</picture>
+</h2>
 
 Проект активно разрабатывается и проверяется на Linux-хосте с Ubuntu, Waydroid и браузерами в локальной сети. Распознавание рассчитано на англоязычный альбомный интерфейс игры. Другие языки, раскладки, разрешения, облики героев и декорации могут потребовать калибровки или привести к пропуску действия. Экспериментальная обучаемая модель записывает предсказания, но не управляет нажатиями.
 
-## Установка
+<h2 id="установка">
+<picture>
+  <source media="(prefers-reduced-motion: reduce) and (max-width: 600px)" srcset="docs/readme/headings/section-4-mobile.svg">
+  <source media="(prefers-reduced-motion: reduce)" srcset="docs/readme/headings/section-4.svg">
+  <source media="(max-width: 600px)" srcset="docs/readme/motion/headings/section-4-mobile.svg">
+  <img src="docs/readme/motion/headings/section-4.svg" alt="Установка" width="100%">
+</picture>
+</h2>
 
 Выберите **установку Linux с браузерной панелью**, если Waydroid и Clash of Clans уже работают на компьютере. Выберите **пакет CasaOS**, если нужно поручить CasaOS управление приложением, а вспомогательному сервису на хосте — запуск Waydroid и игры. В обоих вариантах Android остаётся на компьютере с Linux, а браузер показывает изображение с него.
 
@@ -59,7 +123,7 @@ sudo apt update
 sudo apt install git
 mkdir -p ~/Projects
 cd ~/Projects
-git clone https://github.com/MonkeyStud-lab/coc-donation-bot.git
+git clone https://github.com/Kriksson/coc-donation-bot.git
 cd coc-donation-bot
 bash scripts/setup_linux.sh --web
 source .venv/bin/activate
@@ -124,7 +188,14 @@ python3 scripts/export_clash_apks.py --device ANDROID_IP:5555 --output clash-apk
 
 Если Waydroid уже установлен, настройте его подключение или импорт **до** установки, чтобы не создавать конкурирующий контроллер. [Руководство CasaOS](docs/CASAOS_PACKAGE.md) описывает подключение существующей сессии, импорт профиля, проверку совместимости, привилегии и восстановление запуска. Документированный способ установки предполагает локальную сборку образа; наличие опубликованной версии в реестре не гарантируется.
 
-## Первый запуск
+<h2 id="первый-запуск">
+<picture>
+  <source media="(prefers-reduced-motion: reduce) and (max-width: 600px)" srcset="docs/readme/headings/section-5-mobile.svg">
+  <source media="(prefers-reduced-motion: reduce)" srcset="docs/readme/headings/section-5.svg">
+  <source media="(max-width: 600px)" srcset="docs/readme/motion/headings/section-5-mobile.svg">
+  <img src="docs/readme/motion/headings/section-5.svg" alt="Первый запуск" width="100%">
+</picture>
+</h2>
 
 1. **Подготовьте игру.** Войдите в аккаунт и откройте основную деревню. При ручной установке Linux выполните <code>waydroid status</code>, чтобы узнать IP-адрес устройства. В разделе **Настройки → Дополнительно** задайте **адрес ADB**: адрес с окончанием <code>:5555</code>, затем сохраните. CasaOS настраивает адрес при запуске.
 2. **Проверьте подключение.** Выберите **Инструменты → Устройство → Проверить устройство**. При ручной установке помогут команды терминала:
@@ -142,7 +213,14 @@ python3 scripts/export_clash_apks.py --device ANDROID_IP:5555 --output clash-apk
 
 Сохраняйте разрешение и раскладку Android такими же, как при калибровке. Изменение размера браузера не меняет размер изображения Android. После обновления игры сохраните профиль и повторно откалибруйте изменившиеся элементы.
 
-## Повседневное управление
+<h2 id="повседневное-управление">
+<picture>
+  <source media="(prefers-reduced-motion: reduce) and (max-width: 600px)" srcset="docs/readme/headings/section-6-mobile.svg">
+  <source media="(prefers-reduced-motion: reduce)" srcset="docs/readme/headings/section-6.svg">
+  <source media="(max-width: 600px)" srcset="docs/readme/motion/headings/section-6-mobile.svg">
+  <img src="docs/readme/motion/headings/section-6.svg" alt="Повседневное управление" width="100%">
+</picture>
+</h2>
 
 - **Обзор:** запуск, остановка, кнопка **Начать фарм**, тренировочный режим, показания ресурсов и единый журнал событий. Трансляция игры доступна с любой страницы.
 - **Аккаунты:** сохранение текущей деревни, добавление Supercell ID, переключение между аккаунтами и выбор роли каждого. См. [Аккаунты](docs/ACCOUNTS.md).
@@ -167,7 +245,14 @@ python3 scripts/export_clash_apks.py --device ANDROID_IP:5555 --output clash-apk
 
 Одновременно поддерживается только один видеопоток и один контроллер. Для видео нужен работающий кодировщик Android и разрешённое локальное соединение WebRTC. В качестве альтернативы выберите **Инструменты → Устройство → Текущий снимок** или **Открыть игру**. См. [настройку трансляции](docs/WEB_UI.md#experimental-live-video).
 
-## Атаки
+<h2 id="атаки">
+<picture>
+  <source media="(prefers-reduced-motion: reduce) and (max-width: 600px)" srcset="docs/readme/headings/section-7-mobile.svg">
+  <source media="(prefers-reduced-motion: reduce)" srcset="docs/readme/headings/section-7.svg">
+  <source media="(max-width: 600px)" srcset="docs/readme/motion/headings/section-7-mobile.svg">
+  <img src="docs/readme/motion/headings/section-7.svg" alt="Атаки" width="100%">
+</picture>
+</h2>
 
 Автоматическое пополнение ресурсов атаками **по умолчанию выключено**. Исходный метод — **Последовательность нажатий**; другой метод нужно явно выбрать в настройках. Кнопка **Начать фарм** на странице обзора использует выбранный метод. Расширенная карта боя и редактор сценариев доступны в **Инструменты → Атаки**.
 
@@ -201,7 +286,14 @@ python3 scripts/export_clash_apks.py --device ANDROID_IP:5555 --output clash-apk
 
 Все три метода следят за одновременным появлением **Вернуться домой** и **Войска израсходованы** на двух свежих снимках экрана результата. При обычном завершении боя остаётся калиброванный запасной таймер на случай ошибки распознавания, но при распознанном результате бот обычно не ждёт окончания всего таймера. См. [руководство по атакам](docs/ATTACK_REBUILD.md) и [проверки завершения боя](docs/BATTLE_COMPLETION.md).
 
-## Необязательные улучшения
+<h2 id="необязательные-улучшения">
+<picture>
+  <source media="(prefers-reduced-motion: reduce) and (max-width: 600px)" srcset="docs/readme/headings/section-8-mobile.svg">
+  <source media="(prefers-reduced-motion: reduce)" srcset="docs/readme/headings/section-8.svg">
+  <source media="(max-width: 600px)" srcset="docs/readme/motion/headings/section-8-mobile.svg">
+  <img src="docs/readme/motion/headings/section-8.svg" alt="Необязательные улучшения" width="100%">
+</picture>
+</h2>
 
 Для новой деревни параметр **Настройки → Улучшения → Развитие деревни** включает строительство до улучшений, подготовку армии по подтверждённым открытиям и свободному месту в лагерях, приоритет исследования войск для фарма и проверку завершения зданий перед улучшением Ратуши. Этот пробный режим проверяется начиная с Ратуши 2; более поздние уровни и автоматическое изменение заклинаний полностью не проверены. Перед включением ознакомьтесь с [развитием основной деревни](docs/HOME_PROGRESSION.md).
 
@@ -217,7 +309,14 @@ python3 scripts/export_clash_apks.py --device ANDROID_IP:5555 --output clash-apk
 
 Этот механизм не разрешает тратить самоцветы или магические предметы и не позволяет покупать недостающие ресурсы. Если результат траты нельзя подтвердить, новая покупка блокируется, пока незавершённое действие не будет сверено с игрой. См. [правила и исключения улучшений](docs/UPGRADES.md).
 
-## Восстановление и резервные копии
+<h2 id="восстановление-и-резервные-копии">
+<picture>
+  <source media="(prefers-reduced-motion: reduce) and (max-width: 600px)" srcset="docs/readme/headings/section-9-mobile.svg">
+  <source media="(prefers-reduced-motion: reduce)" srcset="docs/readme/headings/section-9.svg">
+  <source media="(max-width: 600px)" srcset="docs/readme/motion/headings/section-9-mobile.svg">
+  <img src="docs/readme/motion/headings/section-9.svg" alt="Восстановление и резервные копии" width="100%">
+</picture>
+</h2>
 
 Прогресс атаки записывается до отправки игровых команд. После прерывания бот проверяет текущий экран, а не воспроизводит размещение войск или применение способностей. Он дожидается подтверждённого боя, визуально проверяет уход с экрана результата и проверяет деревню, положение камеры и клановый чат перед завершением незаконченной операции. При восстановлении атаки не используется обычный таймер возврата домой: без визуального подтверждения бот приостанавливается. Для трат на улучшения действует отдельный журнал незавершённых действий.
 
@@ -240,7 +339,14 @@ python3 scripts/export_clash_apks.py --device ANDROID_IP:5555 --output clash-apk
 
 Сбор снимков экрана — отдельная необязательная функция. По умолчанию сохраняется не больше 200 изображений в день по UTC и 5 ГБ; дубликаты пропускаются, а при достижении лимита места проверенные данные не удаляются. Снимки, разметка, обученные изображения и данные аккаунта **не загружаются на GitHub автоматически**. Перед передачей архива проверьте его на имена игроков, сообщения чата и данные устройства. См. [сбор данных](docs/SMART_COLLECTION.md) и [разметку](docs/ANNOTATION_WORKFLOW.md).
 
-## Обновление
+<h2 id="обновление">
+<picture>
+  <source media="(prefers-reduced-motion: reduce) and (max-width: 600px)" srcset="docs/readme/headings/section-10-mobile.svg">
+  <source media="(prefers-reduced-motion: reduce)" srcset="docs/readme/headings/section-10.svg">
+  <source media="(max-width: 600px)" srcset="docs/readme/motion/headings/section-10-mobile.svg">
+  <img src="docs/readme/motion/headings/section-10.svg" alt="Обновление" width="100%">
+</picture>
+</h2>
 
 ### Обновление бота
 
@@ -266,7 +372,14 @@ python -m coc_bot.web
 
 После обновления игры проверьте интерфейс и предварительно просмотрите затронутые действия перед запуском автоматизации. Обновление APK не меняет калибровку и не гарантирует совместимость распознавания. См. [сведения об обновлении игры](docs/CASAOS_PACKAGE.md#updating-clash) и [совместимость интерфейса](docs/UI_COMPATIBILITY.md).
 
-## Решение проблем
+<h2 id="решение-проблем">
+<picture>
+  <source media="(prefers-reduced-motion: reduce) and (max-width: 600px)" srcset="docs/readme/headings/section-11-mobile.svg">
+  <source media="(prefers-reduced-motion: reduce)" srcset="docs/readme/headings/section-11.svg">
+  <source media="(max-width: 600px)" srcset="docs/readme/motion/headings/section-11-mobile.svg">
+  <img src="docs/readme/motion/headings/section-11.svg" alt="Решение проблем" width="100%">
+</picture>
+</h2>
 
 - **Нет соединения с Android:** проверьте <code>waydroid status</code>, подключитесь к правильному адресу и убедитесь, что <code>adb devices</code> показывает <code>device</code>. Затем нажмите **Проверить устройство**.
 - **CasaOS не запускается:** проверьте статус среды и причину сбоя, затем повторите запуск после её устранения. Устаревшее состояние Waydroid может потребовать перезапуска <code>waydroid-container.service</code> администратором хоста; не сбрасывайте Android и не удаляйте Clash.
@@ -278,7 +391,14 @@ python -m coc_bot.web
 - **Настройки не применяются:** нажмите **Сохранить** или **Сохранить и перезапустить**. При конфликте сначала перезагрузите настройки, затем редактируйте снова; перед сохранением завершите ручное управление.
 - **Сообщение об ошибке:** экспортируйте журнал событий и скачайте отчёт через инструменты. Приложите видимый экран, ожидаемое действие и фактический результат. Перед отправкой удалите приватные данные аккаунта и чата.
 
-## Разработка и проверки
+<h2 id="разработка-и-проверки">
+<picture>
+  <source media="(prefers-reduced-motion: reduce) and (max-width: 600px)" srcset="docs/readme/headings/section-12-mobile.svg">
+  <source media="(prefers-reduced-motion: reduce)" srcset="docs/readme/headings/section-12.svg">
+  <source media="(max-width: 600px)" srcset="docs/readme/motion/headings/section-12-mobile.svg">
+  <img src="docs/readme/motion/headings/section-12.svg" alt="Разработка и проверки" width="100%">
+</picture>
+</h2>
 
 Код Python находится в <code>src/coc_bot/</code>. Игровая логика разделена между <code>donation/</code>, <code>attack/</code>, <code>upgrades/</code> и <code>vision/</code>; за расписания, владение ресурсами и хранение отвечает <code>runtime/</code>. Общие сервисы находятся в <code>control/</code> и <code>calibration/</code>. Маршруты FastAPI — в <code>src/coc_bot/web/</code>, исходники React/TypeScript — в <code>web/</code>.
 
@@ -325,6 +445,13 @@ PYTHONPATH=src python scripts/preview_web_offline.py
 - [Сбор снимков](docs/SMART_COLLECTION.md), [разметка](docs/ANNOTATION_WORKFLOW.md) и [исследования распознавания](docs/PERCEPTION.md)
 - [Дополнительные параметры запуска](docs/RUNNING.md) и [участие в разработке](docs/CONTRIBUTING.md)
 
-## Лицензия и вклад в проект
+<h2 id="лицензия-и-вклад-в-проект">
+<picture>
+  <source media="(prefers-reduced-motion: reduce) and (max-width: 600px)" srcset="docs/readme/headings/section-13-mobile.svg">
+  <source media="(prefers-reduced-motion: reduce)" srcset="docs/readme/headings/section-13.svg">
+  <source media="(max-width: 600px)" srcset="docs/readme/motion/headings/section-13-mobile.svg">
+  <img src="docs/readme/motion/headings/section-13.svg" alt="Лицензия и вклад в проект" width="100%">
+</picture>
+</h2>
 
 Код распространяется по лицензии [MIT](LICENSE). Сопровождающие проекта не помогают обходить обнаружение, зарабатывать на ботах, прокачивать аккаунты или продавать их. Приветствуются вклады в надёжность, удобство, документацию и исследования компьютерного зрения — в соответствии с [правилами участия](docs/CONTRIBUTING.md).
